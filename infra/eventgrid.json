@@ -16,9 +16,7 @@
       "properties": {
         "destination": {
           "endpointType": "WebHook",
-          "properties": {
-            "endpointUrl": "[parameters('logicAppCallbackUrl')]"
-          }
+          "properties": { "endpointUrl": "[parameters('logicAppCallbackUrl')]" }
         },
         "filter": {
           "includedEventTypes": [
@@ -27,11 +25,9 @@
           ]
         },
         "scope": "[parameters('storageAccountResourceId')]"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Logic/workflows', 'la-iscala-archive')]"
-      ]
+      }
     }
   ]
 }
+
 
