@@ -4,14 +4,15 @@ trigger:
 variables:
   azureServiceConnection: 'Azure-Service-Connection'
   resourceGroupName: 'rg-iscala-archive'
+  location: 'swedencentral'
 
 stages:
 - stage: Dev
   displayName: Deploy Dev
   jobs:
   - job: Deploy
-  pool:
-    name: easec-pool
+    pool:
+      name: easec-pool
     steps:
     - checkout: self
 
@@ -20,24 +21,36 @@ stages:
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
+        action: Create Or Update Resource Group
         resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: Linked artifact
         csmFile: infra/connections.json
         csmParametersFile: infra/parameters/dev.json
+        deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Logic App
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
+        action: Create Or Update Resource Group
         resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: Linked artifact
         csmFile: logicapp/logicapp.json
         csmParametersFile: infra/parameters/dev.json
+        deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Event Grid
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
+        action: Create Or Update Resource Group
         resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: Linked artifact
         csmFile: infra/eventgrid.json
         csmParametersFile: infra/parameters/dev.json
+        deploymentMode: Incremental
