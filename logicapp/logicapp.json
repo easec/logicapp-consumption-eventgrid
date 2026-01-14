@@ -14,7 +14,6 @@
       "location": "[parameters('location')]",
       "dependsOn": [
         "[resourceId('Microsoft.Web/connections', 'office365')]",
-        "[resourceId('Microsoft.Web/connections', 'office365-1')]",
         "[resourceId('Microsoft.Web/connections', 'azureeventgrid-1')]"
       ],
       "properties": {
@@ -45,8 +44,55 @@
           "actions": {
             "For_each": {
               "type": "Foreach",
-              "foreach
-
+              "foreach": "@coalesce(triggerOutputs()?['body'], json('[]'))",
+              "actions": {
+                "Condition": {
+                  "type": "If",
+                  "expression": { "and": [ { "contains": [ "@item()?['data']?['accessTier']", "Hot" ] } ] },
+                  "actions": {
+                    "Send_an_email_(V2)": {
+                      "type": "ApiConnection",
+                      "inputs": {
+                        "host": { "connection": { "name": "@parameters('$connections')['office365']['connectionId']" } },
+                        "method": "post",
+                        "body": {
+                          "To": "mats.johannesson@easec.se;mats.johannesson@iver.se",
+                          "Subject": "Rehydration process finished for iScala",
+                          "Body": "<p>Rehydration process finished for iScala.</p><p>File: @{item()?['subject']}</p><p>Previous tier: @{item()?['data']?['previousTier']}</p>",
+                          "Importance": "Normal"
+                        },
+                        "path": "/v2/Mail"
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Send_an_email_(V2)_1": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                          "host": { "connection": { "name": "@parameters('$connections')['office365']['connectionId']" } },
+                          "method": "post",
+                          "body": {
+                            "To": "mats.johannesson@iver.se;mats.johannesson@easec.se",
+                            "Subject": "Not hot",
+                            "Body": "<p>Access tier: @{item()?['data']?['accessTier']}</p><p>Previous tier: @{item()?['data']?['previousTier']}</p><p>File: @{item()?['subject']}</p>",
+                            "Importance": "Normal"
+                          },
+                          "path": "/v2/Mail"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": { "$connections": { "value": "[parameters('$connections')]" } }
+      }
+    }
   ]
 }
+
 
