@@ -2,24 +2,36 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
+    "location": { "type": "string" },
     "eventSubscriptionName": { "type": "string" },
-    "logicAppName": { "type": "string" },
-    "storageAccountResourceId": { "type": "string" }
+    "storageAccountResourceId": { "type": "string" },
+    "logicAppCallbackUrl": { "type": "string" }
   },
   "resources": [
     {
       "type": "Microsoft.EventGrid/eventSubscriptions",
-      "apiVersion": "2022-06-15",
+      "apiVersion": "2021-06-01-preview",
       "name": "[parameters('eventSubscriptionName')]",
-      "scope": "[parameters('storageAccountResourceId')]",
+      "location": "[parameters('location')]",
       "properties": {
         "destination": {
           "endpointType": "WebHook",
           "properties": {
-            "endpointUrl": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_a_resource_event_occurs'), '2016-06-01').value]"
+            "endpointUrl": "[parameters('logicAppCallbackUrl')]"
           }
-        }
-      }
+        },
+        "filter": {
+          "includedEventTypes": [
+            "Microsoft.Storage.BlobTierChanged",
+            "Microsoft.Storage.BlobCreated"
+          ]
+        },
+        "scope": "[parameters('storageAccountResourceId')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Logic/workflows', 'la-iscala-archive')]"
+      ]
     }
   ]
 }
+
