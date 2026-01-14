@@ -26,7 +26,7 @@ stages:
         location: $(location)
         templateLocation: Linked artifact
         csmFile: infra/connections.json
-        csmParametersFile: infra/parameters/dev.json
+        csmParametersFile: infra/parameters/connections.dev.json
         deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
@@ -39,7 +39,7 @@ stages:
         location: $(location)
         templateLocation: Linked artifact
         csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/dev.json
+        csmParametersFile: infra/parameters/logicapp.dev.json
         deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
@@ -52,5 +52,5 @@ stages:
         location: $(location)
         templateLocation: Linked artifact
         csmFile: infra/eventgrid.json
-        csmParametersFile: infra/parameters/dev.json
+        csmParametersFile: infra/parameters/eventgrid.dev.json
         deploymentMode: Incremental
