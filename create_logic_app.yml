@@ -10,8 +10,8 @@ stages:
   displayName: Deploy Dev
   jobs:
   - job: Deploy
-    pool:
-      vmImage: ubuntu-latest
+  pool:
+    name: easec-pool
     steps:
     - checkout: self
 
