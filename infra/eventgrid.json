@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "eventSubscriptionName": { "type": "string" },
+    "logicAppName": { "type": "string" },
+    "storageAccountResourceId": { "type": "string" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.EventGrid/eventSubscriptions",
+      "apiVersion": "2022-06-15",
+      "name": "[parameters('eventSubscriptionName')]",
+      "scope": "[parameters('storageAccountResourceId')]",
+      "properties": {
+        "destination": {
+          "endpointType": "WebHook",
+          "properties": {
+            "endpointUrl": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_a_resource_event_occurs'), '2016-06-01').value]"
+          }
+        }
+      }
+    }
+  ]
+}
