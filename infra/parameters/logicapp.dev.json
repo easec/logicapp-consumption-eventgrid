@@ -2,21 +2,31 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": {
-      "value": "swedencentral"
-    },
     "logicAppName": {
       "value": "la-iscala-archive"
+    },
+    "location": {
+      "value": "swedencentral"
     },
     "$connections": {
       "value": {
         "office365": {
-          "connectionId": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/office365"
+          "id": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/providers/Microsoft.Web/locations/swedencentral/managedApis/office365",
+          "connectionId": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/office365",
+          "connectionName": "office365"
         },
-        "azureeventgrid": {
-          "connectionId": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/azureeventgrid"
+        "office365-1": {
+          "id": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/providers/Microsoft.Web/locations/swedencentral/managedApis/office365",
+          "connectionId": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/office365",
+          "connectionName": "office365"
+        },
+        "azureeventgrid-1": {
+          "id": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/providers/Microsoft.Web/locations/swedencentral/managedApis/azureeventgrid",
+          "connectionId": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/azureeventgrid",
+          "connectionName": "azureeventgrid"
         }
       }
     }
   }
 }
+
