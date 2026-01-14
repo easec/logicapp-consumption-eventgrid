@@ -2,15 +2,25 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": {
-      "type": "string"
-    }
+    "location": { "type": "string" }
   },
   "resources": [
     {
       "type": "Microsoft.Web/connections",
       "apiVersion": "2016-06-01",
-      "name": "azureeventgrid",
+      "name": "office365",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "office365",
+        "api": {
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/office365')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "azureeventgrid-1",
       "location": "[parameters('location')]",
       "properties": {
         "displayName": "azureeventgrid",
@@ -21,4 +31,5 @@
     }
   ]
 }
+
 
