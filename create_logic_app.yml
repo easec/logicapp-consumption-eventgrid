@@ -2,7 +2,7 @@ trigger:
 - main
 
 variables:
-  azureServiceConnection: 'Azure-Service-Connection'   # Your Azure RM service connection
+  azureServiceConnection: 'Azure-Service-Connection'
   resourceGroupName: 'rg-iscala-archive'
   location: 'swedencentral'
 
@@ -18,6 +18,34 @@ stages:
     - checkout: self
 
     # ------------------------
+    # 🔍 Debug: Verify template files exist
+    # ------------------------
+    - script: |
+        echo "Checking template files..."
+        files=(
+          "$(Build.SourcesDirectory)/infra/connections.json"
+          "$(Build.SourcesDirectory)/infra/parameters/connections.dev.json"
+          "$(Build.SourcesDirectory)/logicapp/logicapp.json"
+          "$(Build.SourcesDirectory)/infra/parameters/logicapp.dev.json"
+          "$(Build.SourcesDirectory)/infra/eventgrid.json"
+          "$(Build.SourcesDirectory)/infra/parameters/eventgrid.dev.json"
+        )
+        missing=false
+        for f in "${files[@]}"; do
+          if [ ! -f "$f" ]; then
+            echo "❌ File not found: $f"
+            missing=true
+          else
+            echo "✅ Found: $f"
+          fi
+        done
+        if [ "$missing" = true ]; then
+          echo "Some template files are missing! Aborting pipeline."
+          exit 1
+        fi
+      displayName: "Verify template and parameter files exist"
+
+    # ------------------------
     # 1️⃣ Deploy API Connections
     # ------------------------
     - task: AzureResourceManagerTemplateDeployment@3
@@ -29,8 +57,8 @@ stages:
         resourceGroupName: $(resourceGroupName)
         location: $(location)
         templateLocation: 'Linked artifact'
-        csmFile: infra/connections.json
-        csmParametersFile: infra/parameters/connections.dev.json
+        csmFile: '$(Build.SourcesDirectory)/infra/connections.json'
+        csmParametersFile: '$(Build.SourcesDirectory)/infra/parameters/connections.dev.json'
         deploymentMode: Incremental
 
     # ------------------------
@@ -45,6 +73,39 @@ stages:
         resourceGroupName: $(resourceGroupName)
         location: $(location)
         templateLocation: 'Linked artifact'
-        csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/logicapp.d
+        csmFile: '$(Build.SourcesDirectory)/logicapp/logicapp.json'
+        csmParametersFile: '$(Build.SourcesDirectory)/infra/parameters/logicapp.dev.json'
+        deploymentMode: Incremental
 
+    # ------------------------
+    # 3️⃣ Fetch Logic App Callback URL
+    # ------------------------
+    - task: AzureCLI@2
+      displayName: Get Logic App Callback URL
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          CALLBACK_URL=$(az logic workflow show \
+            --resource-group $(resourceGroupName) \
+            --name la-iscala-archive \
+            --query "properties.accessEndpoint" -o tsv)
+          echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK_URL"
+
+    # ------------------------
+    # 4️⃣ Deploy Event Grid
+    # ------------------------
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Event Grid
+      inputs:
+        azureResourceManagerConnection: $(azureServiceConnection)
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: 'Linked artifact'
+        csmFile: '$(Build.SourcesDirectory)/infra/eventgrid.json'
+        csmParametersFile: '$(Build.SourcesDirectory)/infra/parameters/eventgrid.dev.json'
+        overrideParameters: >
+          logicAppCallbackUrl=$(logicAppCallbackUrl)
+        deploymentMode: Incremental
