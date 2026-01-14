@@ -13,7 +13,18 @@
       "name": "[parameters('logicAppName')]",
       "location": "[parameters('location')]",
       "properties": {
-        "definition": "[json(loadTextContent('workflow.json'))]",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+          "$connections": {
+          "type": "Object",
+          "defaultValue": {}
+  },
+  "triggers": { ... },
+  "actions": { ... },
+  "outputs": {}
+}
         "parameters": {
           "$connections": {
             "value": "[parameters('$connections')]"
