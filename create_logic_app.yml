@@ -7,50 +7,61 @@ variables:
   location: 'swedencentral'
 
 stages:
-- stage: Dev
-  displayName: Deploy Dev
+- stage: DeployDev
+  displayName: Deploy Development Environment
   jobs:
   - job: Deploy
+    displayName: Deploy Logic App Solution
     pool:
       name: easec-pool
     steps:
     - checkout: self
 
+    # ------------------------
+    # 1️ Deploy API Connections
+    # ------------------------
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Connections
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
-        action: Create Or Update Resource Group
+        action: 'Create Or Update Resource Group'
         resourceGroupName: $(resourceGroupName)
         location: $(location)
-        templateLocation: Linked artifact
+        templateLocation: 'Linked artifact'
         csmFile: infra/connections.json
         csmParametersFile: infra/parameters/connections.dev.json
         deploymentMode: Incremental
 
+    # ------------------------
+    # 2️ Deploy Logic App
+    # ------------------------
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Logic App
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
-        action: Create Or Update Resource Group
+        action: 'Create Or Update Resource Group'
         resourceGroupName: $(resourceGroupName)
         location: $(location)
-        templateLocation: Linked artifact
+        templateLocation: 'Linked artifact'
         csmFile: logicapp/logicapp.json
         csmParametersFile: infra/parameters/logicapp.dev.json
         deploymentMode: Incremental
 
+    # ------------------------
+    # 3️ Deploy Event Grid Subscription
+    # ------------------------
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Event Grid
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
-        action: Create Or Update Resource Group
+        action: 'Create Or Update Resource Group'
         resourceGroupName: $(resourceGroupName)
         location: $(location)
-        templateLocation: Linked artifact
+        templateLocation: 'Linked artifact'
         csmFile: infra/eventgrid.json
         csmParametersFile: infra/parameters/eventgrid.dev.json
         deploymentMode: Incremental
+
