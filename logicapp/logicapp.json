@@ -18,22 +18,41 @@
           "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
           "contentVersion": "1.0.0.0",
           "parameters": {
-            "$connections": { "type": "Object", "defaultValue": {} }
+            "$connections": {
+              "type": "Object",
+              "defaultValue": {}
+            }
           },
           "triggers": {
             "When_a_resource_event_occurs": {
               "type": "ApiConnectionWebhook",
               "inputs": {
-                "host": { "connection": { "name": "@parameters('$connections')['azureeventgrid-1']['connectionId']" } },
+                "host": {
+                  "connection": {
+                    "name": "[parameters('$connections')['azureeventgrid-1'].connectionId]"
+                  }
+                },
                 "body": {
                   "properties": {
                     "topic": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa')]",
-                    "destination": { "endpointType": "webhook", "properties": { "endpointUrl": "@listCallbackUrl()" } },
-                    "filter": { "includedEventTypes": [ "Microsoft.Storage.BlobTierChanged", "Microsoft.Storage.BlobCreated" ] }
+                    "destination": {
+                      "endpointType": "webhook",
+                      "properties": {
+                        "endpointUrl": "@listCallbackUrl()"
+                      }
+                    },
+                    "filter": {
+                      "includedEventTypes": [
+                        "Microsoft.Storage.BlobTierChanged",
+                        "Microsoft.Storage.BlobCreated"
+                      ]
+                    }
                   }
                 },
-                "path": "[concat('/subscriptions/', encodeURIComponent(subscription().subscriptionId), '/providers/Microsoft.Storage.StorageAccounts/resource/eventSubscriptions')]",
-                "queries": { "x-ms-api-version": "2017-09-15-preview" }
+                "path": "[concat('/subscriptions/', uriComponent(subscription().subscriptionId), '/providers/', uriComponent('Microsoft.Storage/storageAccounts'), '/resource/eventSubscriptions')]",
+                "queries": {
+                  "x-ms-api-version": "2017-09-15-preview"
+                }
               }
             }
           },
@@ -44,20 +63,28 @@
               "actions": {
                 "Condition": {
                   "type": "If",
-                  "expression": { "and": [ { "contains": [ "@item()?['data']?['accessTier']", "Hot" ] } ] },
+                  "expression": {
+                    "and": [
+                      { "contains": [ "@item()?['data']?['accessTier']", "Hot" ] }
+                    ]
+                  },
                   "actions": {
                     "Send_an_email_(V2)": {
                       "type": "ApiConnection",
                       "inputs": {
-                        "host": { "connection": { "name": "@parameters('$connections')['office365']['connectionId']" } },
+                        "host": {
+                          "connection": {
+                            "name": "[parameters('$connections')['office365'].connectionId]"
+                          }
+                        },
                         "method": "post",
+                        "path": "/v2/Mail",
                         "body": {
                           "To": "mats.johannesson@easec.se;mats.johannesson@iver.se",
                           "Subject": "Rehydration process finished for iScala",
                           "Body": "<p>Rehydration process finished for iScala.</p><p>File: @{item()?['subject']}</p><p>Previous tier: @{item()?['data']?['previousTier']}</p>",
                           "Importance": "Normal"
-                        },
-                        "path": "/v2/Mail"
+                        }
                       }
                     }
                   },
@@ -66,15 +93,19 @@
                       "Send_an_email_(V2)_1": {
                         "type": "ApiConnection",
                         "inputs": {
-                          "host": { "connection": { "name": "@parameters('$connections')['office365']['connectionId']" } },
+                          "host": {
+                            "connection": {
+                              "name": "[parameters('$connections')['office365'].connectionId]"
+                            }
+                          },
                           "method": "post",
+                          "path": "/v2/Mail",
                           "body": {
                             "To": "mats.johannesson@iver.se;mats.johannesson@easec.se",
                             "Subject": "Not hot",
                             "Body": "<p>Access tier: @{item()?['data']?['accessTier']}</p><p>Previous tier: @{item()?['data']?['previousTier']}</p><p>File: @{item()?['subject']}</p>",
                             "Importance": "Normal"
-                          },
-                          "path": "/v2/Mail"
+                          }
                         }
                       }
                     }
@@ -85,11 +116,16 @@
           },
           "outputs": {}
         },
-        "parameters": { "$connections": { "value": "[parameters('$connections')]" } }
+        "parameters": {
+          "$connections": {
+            "value": "[parameters('$connections')]"
+          }
+        }
       }
     }
   ]
 }
+
 
 
 
