@@ -2,9 +2,15 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "logicAppName": { "type": "string" },
-    "location": { "type": "string" },
-    "$connections": { "type": "object" }
+    "logicAppName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "$connections": {
+      "type": "object"
+    }
   },
   "resources": [
     {
@@ -65,7 +71,12 @@
                   "type": "If",
                   "expression": {
                     "and": [
-                      { "contains": ["@item()?['data']?['accessTier']", "Hot"] }
+                      {
+                        "contains": [
+                          "@item()?['data']?['accessTier']",
+                          "Hot"
+                        ]
+                      }
                     ]
                   },
                   "actions": {
@@ -76,9 +87,63 @@
                           "connection": {
                             "name": "[parameters('$connections')['office365'].connectionId]"
                           }
-
-
-
-
-
-
+                        },
+                        "method": "post",
+                        "path": "/v2/Mail",
+                        "body": {
+                          "To": "mats.johannesson@easec.se;mats.johannesson@iver.se",
+                          "Subject": "Rehydration process finished for iScala",
+                          "Body": "<p>Rehydration process finished for iScala.</p><p>File: @{item()?['subject']}</p><p>Previous tier: @{item()?['data']?['previousTier']}</p>",
+                          "Importance": "Normal"
+                        }
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Send_an_email_(V2)_1": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                          "host": {
+                            "connection": {
+                              "name": "[parameters('$connections')['office365'].connectionId]"
+                            }
+                          },
+                          "method": "post",
+                          "path": "/v2/Mail",
+                          "body": {
+                            "To": "mats.johannesson@iver.se;mats.johannesson@easec.se",
+                            "Subject": "Not hot",
+                            "Body": "<p>Access tier: @{item()?['data']?['accessTier']}</p><p>Previous tier: @{item()?['data']?['previousTier']}</p><p>File: @{item()?['subject']}</p>",
+                            "Importance": "Normal"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "office365": {
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/office365')]",
+                "connectionId": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/office365')]",
+                "connectionName": "office365"
+              },
+              "azureeventgrid-1": {
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/azureeventgrid-1')]",
+                "connectionId": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/azureeventgrid-1')]",
+                "connectionName": "azureeventgrid-1"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
