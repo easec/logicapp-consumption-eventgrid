@@ -7,24 +7,25 @@
     "$connections": {
       "value": {
         "office365": {
-          "id": "/subscriptions/<subId>/providers/Microsoft.Web/locations/swedencentral/managedApis/office365",
-          "connectionId": "/subscriptions/<subId>/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/office365",
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/swedencentral/managedApis/office365')]",
+          "connectionId": "[resourceId('Microsoft.Web/connections','office365')]",
           "connectionName": "office365"
         },
         "office365-1": {
-          "id": "/subscriptions/<subId>/providers/Microsoft.Web/locations/swedencentral/managedApis/office365",
-          "connectionId": "/subscriptions/<subId>/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/office365",
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/swedencentral/managedApis/office365')]",
+          "connectionId": "[resourceId('Microsoft.Web/connections','office365')]",
           "connectionName": "office365"
         },
         "azureeventgrid-1": {
-          "id": "/subscriptions/<subId>/providers/Microsoft.Web/locations/swedencentral/managedApis/azureeventgrid",
-          "connectionId": "/subscriptions/<subId>/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/azureeventgrid",
-          "connectionName": "azureeventgrid"
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/swedencentral/managedApis/azureeventgrid')]",
+          "connectionId": "[resourceId('Microsoft.Web/connections','azureeventgrid-1')]",
+          "connectionName": "azureeventgrid-1"
         }
       }
     }
   }
 }
+
 
 
 
