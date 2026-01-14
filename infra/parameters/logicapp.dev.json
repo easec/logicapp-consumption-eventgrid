@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "swedencentral"
+    },
+    "logicAppName": {
+      "value": "la-iscala-archive"
+    },
+    "$connections": {
+      "value": {
+        "office365": {
+          "connectionId": "/subscriptions/xxx/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/office365"
+        },
+        "azureeventgrid": {
+          "connectionId": "/subscriptions/xxx/resourceGroups/rg-iscala-archive/providers/Microsoft.Web/connections/azureeventgrid"
+        }
+      }
+    }
+  }
+}
