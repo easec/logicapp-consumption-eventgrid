@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": { "type": "Object" }
+  },
+  "triggers": {
+    "When_a_resource_event_occurs": {
+      "type": "ApiConnectionWebhook",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['azureeventgrid']['connectionId']"
+          }
+        },
+        "path": "/subscriptions/@{encodeURIComponent(subscription().subscriptionId)}/providers/@{encodeURIComponent('Microsoft.Storage.StorageAccounts')}/resource/eventSubscriptions"
+      }
+    }
+  },
+  "actions": {}
+}
