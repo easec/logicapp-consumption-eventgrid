@@ -2,7 +2,7 @@ trigger:
 - main
 
 variables:
-  azureServiceConnection: 'Azure-Service-Connection'
+  azureServiceConnection: 'Azure-Service-Connection'   # Your Azure RM service connection
   resourceGroupName: 'rg-iscala-archive'
   location: 'swedencentral'
 
@@ -46,38 +46,5 @@ stages:
         location: $(location)
         templateLocation: 'Linked artifact'
         csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/logicapp.dev.json
-        deploymentMode: Incremental
+        csmParametersFile: infra/parameters/logicapp.d
 
-    # ------------------------
-    # 3️⃣ Fetch Logic App Callback URL
-    # ------------------------
-    - task: AzureCLI@2
-      displayName: Get Logic App Callback URL
-      inputs:
-        azureSubscription: $(azureServiceConnection)
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          CALLBACK_URL=$(az logic workflow show \
-            --resource-group $(resourceGroupName) \
-            --name la-iscala-archive \
-            --query "properties.accessEndpoint" -o tsv)
-          echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK_URL"
-
-    # ------------------------
-    # 4️⃣ Deploy Event Grid Subscription
-    # ------------------------
-    - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Event Grid
-      inputs:
-        azureResourceManagerConnection: $(azureServiceConnection)
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(location)
-        templateLocation: 'Linked artifact'
-        csmFile: infra/eventgrid.json
-        csmParametersFile: infra/parameters/eventgrid.dev.json
-        overrideParameters: >
-          logicAppCallbackUrl=$(logicAppCallbackUrl)
-        deploymentMode: Incremental
