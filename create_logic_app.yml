@@ -87,10 +87,12 @@ stages:
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
+          echo "Fetching Logic App callback URL..."
           CALLBACK_URL=$(az logic workflow show \
             --resource-group $(resourceGroupName) \
             --name la-iscala-archive \
             --query "properties.accessEndpoint" -o tsv)
+          echo "Logic App callback URL: $CALLBACK_URL"
           echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK_URL"
 
     # ------------------------
