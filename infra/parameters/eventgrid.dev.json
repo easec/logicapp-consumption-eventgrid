@@ -2,14 +2,14 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": {
-      "value": "swedencentral"
-    },
-    "eventSubscriptionName": {
-      "value": "egsub-iscala-archive"
-    },
+    "location": { "value": "swedencentral" },
+    "eventSubscriptionName": { "value": "egsub-iscala-archive" },
     "storageAccountResourceId": {
-      "value": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa"
+      "value": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa"
+    },
+    "logicAppCallbackUrl": {
+      "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows', 'la-iscala-archive'), '2016-06-01').value]"
     }
   }
+}
 }
