@@ -12,10 +12,7 @@
       "apiVersion": "2019-05-01",
       "name": "[parameters('logicAppName')]",
       "location": "[parameters('location')]",
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/connections', 'office365')]",
-        "[resourceId('Microsoft.Web/connections', 'azureeventgrid-1')]"
-      ],
+      "dependsOn": [],
       "properties": {
         "state": "Enabled",
         "definition": {
