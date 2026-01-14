@@ -2,7 +2,9 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "type": "string" }
+    "location": {
+      "type": "string"
+    }
   },
   "resources": [
     {
@@ -11,13 +13,12 @@
       "name": "azureeventgrid",
       "location": "[parameters('location')]",
       "properties": {
+        "displayName": "azureeventgrid",
         "api": {
-          "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'azureeventgrid')]"
-        },
-        "authentication": {
-          "type": "ManagedServiceIdentity"
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/azureeventgrid')]"
         }
       }
     }
   ]
 }
+
