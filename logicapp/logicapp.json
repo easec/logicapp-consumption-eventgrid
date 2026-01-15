@@ -35,7 +35,7 @@
               "inputs": {
                 "host": {
                   "connection": {
-                    "name": "[parameters('$connections')['azureeventgrid-1'].id]"
+                    "name": "[parameters('$connections')['azureeventgrid-1'].connectionId]"
                   }
                 },
                 "body": {
@@ -85,7 +85,7 @@
                       "inputs": {
                         "host": {
                           "connection": {
-                            "name": "[parameters('$connections')['office365'].id]"
+                            "name": "[parameters('$connections')['office365'].connectionId]"
                           }
                         },
                         "method": "post",
@@ -106,7 +106,7 @@
                         "inputs": {
                           "host": {
                             "connection": {
-                              "name": "[parameters('$connections')['office365'].id]"
+                              "name": "[parameters('$connections')['office365'].connectionId]"
                             }
                           },
                           "method": "post",
