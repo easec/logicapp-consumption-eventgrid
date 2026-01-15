@@ -24,7 +24,7 @@ stages:
         resourceGroupName: $(resourceGroupName)
         location: $(location)
         csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/dev.json
+        csmParametersFile: infra/parameters/logicapp.dev.json
         deploymentOutputs: logicAppOutputs
 
     # SHOW THE CALLBACK URL
