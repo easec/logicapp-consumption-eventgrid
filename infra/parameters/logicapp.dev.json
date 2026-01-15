@@ -3,28 +3,9 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "logicAppName": { "value": "la-iscala-archive" },
-    "location": { "value": "swedencentral" },
-    "$connections": {
-      "value": {
-        "office365": {
-          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/swedencentral/managedApis/office365')]",
-          "connectionId": "[resourceId('Microsoft.Web/connections','office365')]",
-          "connectionName": "office365"
-        },
-        "office365-1": {
-          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/swedencentral/managedApis/office365')]",
-          "connectionId": "[resourceId('Microsoft.Web/connections','office365')]",
-          "connectionName": "office365"
-        },
-        "azureeventgrid-1": {
-          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/swedencentral/managedApis/azureeventgrid')]",
-          "connectionId": "[resourceId('Microsoft.Web/connections','azureeventgrid-1')]",
-          "connectionName": "azureeventgrid-1"
-        }
-      }
-    }
+    "location": { "value": "swedencentral" }
   }
-}
+} 
 
 
 
