@@ -2,9 +2,24 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "eventSubscriptionName": { "type": "string" },
-    "storageAccountResourceId": { "type": "string" },
-    "logicAppCallbackUrl": { "type": "string" }
+    "eventSubscriptionName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Event Grid subscription"
+      }
+    },
+    "storageAccountResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the storage account to subscribe to"
+      }
+    },
+    "logicAppCallbackUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Full HTTPS callback URL of the Logic App HTTP trigger (including sig)"
+      }
+    }
   },
   "resources": [
     {
@@ -21,14 +36,19 @@
         },
         "filter": {
           "includedEventTypes": [
-            "Microsoft.Storage.BlobTierChanged",
-            "Microsoft.Storage.BlobCreated"
+            "Microsoft.Storage.BlobCreated",
+            "Microsoft.Storage.BlobTierChanged"
           ]
+        },
+        "retryPolicy": {
+          "maxDeliveryAttempts": 5,
+          "eventTimeToLiveInMinutes": 1440
         }
       }
     }
   ]
 }
+
 
 
 
