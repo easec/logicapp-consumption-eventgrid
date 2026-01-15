@@ -3,7 +3,8 @@ trigger:
 
 variables:
   azureServiceConnection: 'Azure-Service-Connection'
-  resourceGroupName: 'rg-iscala-archive'
+  # resourceGroupName: 'rg-iscala-archive'
+  resourceGroupName: 'snapshottest-rg'
   location: 'swedencentral'
 
 stages:
