@@ -2,15 +2,9 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "eventSubscriptionName": {
-      "type": "string"
-    },
-    "storageAccountResourceId": {
-      "type": "string"
-    },
-    "logicAppCallbackUrl": {
-      "type": "string"
-    }
+    "eventSubscriptionName": { "type": "string" },
+    "storageAccountResourceId": { "type": "string" },
+    "logicAppCallbackUrl": { "type": "string" }
   },
   "resources": [
     {
@@ -35,6 +29,7 @@
     }
   ]
 }
+
 
 
 
