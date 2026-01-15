@@ -4,6 +4,7 @@ trigger:
 variables:
   azureServiceConnection: 'Azure-Service-Connection'
   resourceGroupName: 'rg-iscala-archive'
+  location: 'swedencentral'
 
 stages:
 - stage: Dev
@@ -22,6 +23,7 @@ stages:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
         resourceGroupName: $(resourceGroupName)
+        location: $(location)           # ✅ REQUIRED
         csmFile: logicapp/logicapp.json
         csmParametersFile: infra/parameters/dev.json
         deploymentOutputs: logicAppOutputs
@@ -33,9 +35,11 @@ stages:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
         resourceGroupName: $(resourceGroupName)
+        location: $(location)           # ✅ REQUIRED
         csmFile: infra/eventgrid.json
         overrideParameters: >
           -eventSubscriptionName iscala-archive-egsub
           -storageAccountResourceId /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa
           -logicAppCallbackUrl "$(logicAppOutputs.callbackUrl.value)"
+
 
