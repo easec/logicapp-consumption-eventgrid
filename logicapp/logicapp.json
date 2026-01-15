@@ -27,7 +27,7 @@
               "type": "If",
               "expression": {
                 "equals": [
-                  "@triggerBody()?['eventType']",
+                  "@triggerBody()[0]?['eventType']",
                   "Microsoft.EventGrid.SubscriptionValidationEvent"
                 ]
               },
@@ -37,7 +37,7 @@
                   "inputs": {
                     "statusCode": 200,
                     "body": {
-                      "validationResponse": "@triggerBody()?['data']?['validationCode']"
+                      "validationResponse": "@triggerBody()[0]?['data']?['validationCode']"
                     }
                   }
                 }
@@ -64,4 +64,3 @@
     }
   }
 }
-
