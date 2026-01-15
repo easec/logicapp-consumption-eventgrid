@@ -29,7 +29,7 @@ stages:
         deploymentMode: Incremental
         deploymentOutputs: logicAppOutputs
 
-    # 2️⃣ Capture callback URL
+    # 2️⃣ Capture Logic App callback URL
     - script: |
         echo "Logic App callback URL:"
         echo "$(logicAppOutputs.callbackUrl.value)"
