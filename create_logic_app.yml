@@ -8,6 +8,7 @@ variables:
 
 stages:
 - stage: Dev
+  displayName: Deploy Dev
   jobs:
   - job: Deploy
     pool:
@@ -15,7 +16,9 @@ stages:
     steps:
     - checkout: self
 
-    # Deploy Logic App
+    # ------------------------------
+    # 1️⃣ Deploy Logic App (HTTP trigger)
+    # ------------------------------
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Logic App
       inputs:
@@ -25,17 +28,22 @@ stages:
         location: $(location)
         csmFile: logicapp/logicapp.json
         csmParametersFile: infra/parameters/logicapp.dev.json
+        deploymentMode: Incremental
         deploymentOutputs: logicAppOutputs
 
-    # SHOW THE CALLBACK URL
+    # ------------------------------
+    # 2️⃣ Show Logic App callback URL for debugging
+    # ------------------------------
     - script: |
-        echo "============================"
-        echo "LOGIC APP CALLBACK URL:"
+        echo "==============================="
+        echo "Logic App callback URL:"
         echo "$(logicAppOutputs.callbackUrl.value)"
-        echo "============================"
-      displayName: SHOW callback URL
+        echo "==============================="
+      displayName: Show Logic App Callback URL
 
-    # Deploy Event Grid
+    # ------------------------------
+    # 3️⃣ Deploy Event Grid subscription
+    # ------------------------------
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Event Grid
       inputs:
@@ -44,9 +52,7 @@ stages:
         resourceGroupName: $(resourceGroupName)
         location: $(location)
         csmFile: infra/eventgrid.json
+        deploymentMode: Incremental
         overrideParameters: >
           -eventSubscriptionName iscala-archive-egsub
-          -storageAccountResourceId /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa
-          -logicAppCallbackUrl "$(logicAppOutputs.callbackUrl.value)"
-
-
+          -storageAccountResourceId /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa
