@@ -128,19 +128,22 @@
           "outputs": {}
         },
         "parameters": {
-          "$connections": {
-            "value": {
-              "office365": {
-                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/office365')]",
-                "connectionName": "office365"
-              },
-              "azureeventgrid-1": {
-                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/azureeventgrid-1')]",
-                "connectionName": "azureeventgrid-1"
-              }
-            }
-          }
-        }
+  "$connections": {
+    "value": {
+      "office365": {
+        "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/office365')]",
+        "connectionId": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/office365')]",
+        "connectionName": "office365"
+      },
+      "azureeventgrid-1": {
+        "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/azureeventgrid')]",
+        "connectionId": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', 'rg-iscala-archive', '/providers/Microsoft.Web/connections/azureeventgrid-1')]",
+        "connectionName": "azureeventgrid-1"
+      }
+    }
+  }
+}
+
       }
     }
   ]
