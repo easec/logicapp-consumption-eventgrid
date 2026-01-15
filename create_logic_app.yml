@@ -108,6 +108,5 @@ stages:
         templateLocation: 'Linked artifact'
         csmFile: '$(Build.SourcesDirectory)/infra/eventgrid.json'
         csmParametersFile: '$(Build.SourcesDirectory)/infra/parameters/eventgrid.dev.json'
-        overrideParameters: >
-          logicAppCallbackUrl=$(logicAppCallbackUrl)
+        overrideParameters: '-logicAppCallbackUrl "$(logicAppCallbackUrl)"'
         deploymentMode: Incremental
