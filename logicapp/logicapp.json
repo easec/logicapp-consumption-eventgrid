@@ -3,8 +3,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "logicAppName": { "type": "string" },
-    "location": { "type": "string" },
-    "$connections": { "type": "object" }
+    "location": { "type": "string" }
   },
   "resources": [
     {
@@ -16,14 +15,8 @@
         "definition": {
           "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
           "contentVersion": "1.0.0.0",
-          "parameters": {
-            "$connections": {
-              "type": "Object",
-              "defaultValue": {}
-            }
-          },
           "triggers": {
-            "When_a_HTTP_request_is_received": {
+            "When_HTTP_is_called": {
               "type": "Request",
               "kind": "Http",
               "inputs": {
@@ -33,11 +26,6 @@
           },
           "actions": {},
           "outputs": {}
-        },
-        "parameters": {
-          "$connections": {
-            "value": "[parameters('$connections')]"
-          }
         }
       }
     }
@@ -45,8 +33,9 @@
   "outputs": {
     "callbackUrl": {
       "type": "string",
-      "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_a_HTTP_request_is_received'), '2019-05-01').value]"
+      "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_HTTP_is_called'), '2019-05-01').value]"
     }
   }
 }
+
 
