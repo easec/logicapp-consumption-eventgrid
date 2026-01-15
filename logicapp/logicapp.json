@@ -1,27 +1,39 @@
-"outputs": {
-  "callbackUrl": {
-    "type": "string",
-    "value": "[concat(
-      listCallbackUrl(
-        resourceId(
-          'Microsoft.Logic/workflows/triggers',
-          parameters('logicAppName'),
-          'When_HTTP_is_called'
-        ),
-        '2019-05-01'
-      ).basePath,
-      '/paths/invoke?api-version=2019-05-01&sig=',
-      listCallbackUrl(
-        resourceId(
-          'Microsoft.Logic/workflows/triggers',
-          parameters('logicAppName'),
-          'When_HTTP_is_called'
-        ),
-        '2019-05-01'
-      ).queries.sig
-    )]"
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": { "type": "string" },
+    "location": { "type": "string" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "triggers": {
+            "When_HTTP_is_called": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "schema": {}
+              }
+            }
+          },
+          "actions": {},
+          "outputs": {}
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "callbackUrl": {
+      "type": "string",
+      "value": "[concat(listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_HTTP_is_called'),'2019-05-01').basePath,'/paths/invoke?api-version=2019-05-01&sig=',listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'),'When_HTTP_is_called'),'2019-05-01').queries.sig)]"
+    }
   }
 }
-
-
-
