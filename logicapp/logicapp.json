@@ -22,7 +22,36 @@
               "inputs": { "schema": {} }
             }
           },
-          "actions": {},
+          "actions": {
+            "CheckValidation": {
+              "type": "If",
+              "expression": {
+                "equals": [
+                  "@triggerBody()?['eventType']",
+                  "Microsoft.EventGrid.SubscriptionValidationEvent"
+                ]
+              },
+              "actions": {
+                "RespondToValidation": {
+                  "type": "Response",
+                  "inputs": {
+                    "statusCode": 200,
+                    "body": {
+                      "validationResponse": "@triggerBody()?['data']?['validationCode']"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "actions": {
+                  "ProcessBlobEvent": {
+                    "type": "Compose",
+                    "inputs": "@triggerBody()"
+                  }
+                }
+              }
+            }
+          },
           "outputs": {}
         }
       }
@@ -35,4 +64,5 @@
     }
   }
 }
+
 
