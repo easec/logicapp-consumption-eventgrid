@@ -29,7 +29,7 @@ stages:
         deploymentMode: Incremental
         deploymentOutputs: logicAppOutputs
 
-    # 2️⃣ Wait for Logic App to be fully ready
+    # 2️⃣ Wait for Logic App readiness
     - script: |
         echo "Waiting 30 seconds for Logic App endpoint to become available..."
         sleep 30
@@ -42,7 +42,7 @@ stages:
         echo "##vso[task.setvariable variable=logicAppCallbackUrl]$(logicAppOutputs.callbackUrl.value)"
       displayName: Set pipeline variable for Event Grid
 
-    # 4️⃣ Deploy Event Grid subscription
+    # 4️⃣ Deploy Event Grid subscription via Azure CLI
     - task: AzureCLI@2
       displayName: Deploy Event Grid Subscription
       inputs:
@@ -52,7 +52,7 @@ stages:
         inlineScript: |
           az eventgrid event-subscription create \
             --name iscala-archive-egsub \
-            --source-resource-id /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa \
+            --source-resource-id /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa \
             --endpoint "$(logicAppCallbackUrl)" \
             --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged \
             --max-delivery-attempts 5 \
