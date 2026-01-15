@@ -6,7 +6,7 @@
       "value": "iscala-archive-egsub"
     },
     "storageAccountResourceId": {
-      "value": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa"
+      "value": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa"
     },
     "logicAppCallbackUrl": {
       "value": "PLACEHOLDER"
