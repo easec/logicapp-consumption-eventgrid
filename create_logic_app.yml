@@ -32,14 +32,13 @@ stages:
         deploymentOutputs: logicAppOutputs
 
     # ------------------------------
-    # 2️⃣ Show Logic App callback URL for debugging
+    # 2️⃣ Capture callback URL as pipeline variable
     # ------------------------------
     - script: |
-        echo "==============================="
         echo "Logic App callback URL:"
         echo "$(logicAppOutputs.callbackUrl.value)"
-        echo "==============================="
-      displayName: Show Logic App Callback URL
+        echo "##vso[task.setvariable variable=logicAppCallbackUrl]$(logicAppOutputs.callbackUrl.value)"
+      displayName: Set pipeline variable for Event Grid
 
     # ------------------------------
     # 3️⃣ Deploy Event Grid subscription
@@ -55,4 +54,5 @@ stages:
         deploymentMode: Incremental
         overrideParameters: >
           -eventSubscriptionName iscala-archive-egsub
-          -storageAccountResourceId /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa
+          -storageAccountResourceId /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa
+          -logicAppCallbackUrl "$(logicAppCallbackUrl)"
