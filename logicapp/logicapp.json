@@ -44,7 +44,7 @@
               },
               "else": {
                 "actions": {
-                  "ProcessBlobEvent": {
+                  "ProcessEvent": {
                     "type": "Compose",
                     "inputs": "@triggerBody()"
                   }
