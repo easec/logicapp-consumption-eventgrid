@@ -16,9 +16,7 @@ stages:
     steps:
     - checkout: self
 
-    # ------------------------------
-    # 1️⃣ Deploy Logic App (HTTP trigger)
-    # ------------------------------
+    # 1️⃣ Deploy Logic App
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Logic App
       inputs:
@@ -31,18 +29,14 @@ stages:
         deploymentMode: Incremental
         deploymentOutputs: logicAppOutputs
 
-    # ------------------------------
-    # 2️⃣ Capture callback URL as pipeline variable
-    # ------------------------------
+    # 2️⃣ Capture callback URL
     - script: |
         echo "Logic App callback URL:"
         echo "$(logicAppOutputs.callbackUrl.value)"
         echo "##vso[task.setvariable variable=logicAppCallbackUrl]$(logicAppOutputs.callbackUrl.value)"
       displayName: Set pipeline variable for Event Grid
 
-    # ------------------------------
     # 3️⃣ Deploy Event Grid subscription
-    # ------------------------------
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Event Grid
       inputs:
@@ -56,3 +50,4 @@ stages:
           -eventSubscriptionName iscala-archive-egsub
           -storageAccountResourceId /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa
           -logicAppCallbackUrl "$(logicAppCallbackUrl)"
+
