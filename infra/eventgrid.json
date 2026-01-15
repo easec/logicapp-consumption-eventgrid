@@ -2,33 +2,40 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "type": "string" },
-    "eventSubscriptionName": { "type": "string" },
-    "storageAccountResourceId": { "type": "string" },
-    "logicAppCallbackUrl": { "type": "string" }
+    "eventSubscriptionName": {
+      "type": "string"
+    },
+    "storageAccountResourceId": {
+      "type": "string"
+    },
+    "logicAppCallbackUrl": {
+      "type": "string"
+    }
   },
   "resources": [
     {
       "type": "Microsoft.EventGrid/eventSubscriptions",
-      "apiVersion": "2021-06-01-preview",
+      "apiVersion": "2022-06-15",
       "name": "[parameters('eventSubscriptionName')]",
-      "location": "[parameters('location')]",
+      "scope": "[parameters('storageAccountResourceId')]",
       "properties": {
         "destination": {
           "endpointType": "WebHook",
-          "properties": { "endpointUrl": "[parameters('logicAppCallbackUrl')]" }
+          "properties": {
+            "endpointUrl": "[parameters('logicAppCallbackUrl')]"
+          }
         },
         "filter": {
           "includedEventTypes": [
             "Microsoft.Storage.BlobTierChanged",
             "Microsoft.Storage.BlobCreated"
           ]
-        },
-        "scope": "[parameters('storageAccountResourceId')]"
+        }
       }
     }
   ]
 }
+
 
 
 
