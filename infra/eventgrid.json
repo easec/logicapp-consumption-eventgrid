@@ -15,7 +15,9 @@
       "properties": {
         "destination": {
           "endpointType": "WebHook",
-          "properties": { "endpointUrl": "[parameters('logicAppCallbackUrl')]" }
+          "properties": {
+            "endpointUrl": "[parameters('logicAppCallbackUrl')]"
+          }
         },
         "filter": {
           "includedEventTypes": [
@@ -31,6 +33,7 @@
     }
   ]
 }
+
 
 
 
