@@ -5,6 +5,8 @@ variables:
   azureServiceConnection: 'Azure-Service-Connection'
   resourceGroupName: 'rg-iscala-archive'
   location: 'swedencentral'
+  storageAccountResourceId: '/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa'
+  eventSubscriptionName: 'iscala-archive-egsub'
 
 stages:
 - stage: Dev
@@ -15,38 +17,67 @@ stages:
     steps:
     - checkout: self
 
-    # Deploy Logic App
+    # (A) Deploy Function infra (ARM)
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Logic App
+      displayName: Deploy Function App infra
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
         resourceGroupName: $(resourceGroupName)
         location: $(location)
-        csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/logicapp.dev.json
+        csmFile: infra/functionapp.json
+        csmParametersFile: infra/parameters/functionapp.dev.json
         deploymentMode: Incremental
-        deploymentOutputs: logicAppOutputs
+        deploymentOutputs: functionOutputs
 
-    # Wait for endpoint readiness
-    - script: sleep 30
-      displayName: Wait for Logic App
-
-    # Capture callback URL (WITH sig)
+    # capture function webhook url
     - script: |
-        echo "##vso[task.setvariable variable=logicAppCallbackUrl]$(logicAppOutputs.callbackUrl.value)"
-      displayName: Set callback URL
+        echo "Function webhook URL: $(functionOutputs.functionWebhookUrl.value)"
+        echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+      displayName: Set Function webhook URL
 
-    # Create Event Grid subscription
+    # (B) Zip and deploy function code
+    - task: ArchiveFiles@2
+      displayName: Zip Function App
+      inputs:
+        rootFolderOrFile: functionapp
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+        replaceExistingArchive: true
+
+    - task: AzureFunctionApp@2
+      displayName: Deploy Function App package
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        appType: functionApp
+        appName: 'fa-iscala-eg-proxy-dev'
+        package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
+
+    # (C) Recreate Event Grid subscription to the Function endpoint
     - task: AzureCLI@2
-      displayName: Create Event Grid subscription
+      displayName: Create Event Grid subscription (to Function)
       inputs:
         azureSubscription: $(azureServiceConnection)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
+          set -e
+
+          echo "Using endpoint: $(functionWebhookUrl)"
+
+          az eventgrid event-subscription delete \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" \
+            --yes || true
+
           az eventgrid event-subscription create \
-            --name iscala-archive-egsub \
-            --source-resource-id /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa \
-            --endpoint "$(logicAppCallbackUrl)" \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" \
+            --endpoint "$(functionWebhookUrl)" \
             --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged
+
+          az eventgrid event-subscription show \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" \
+            --query "destination.properties.endpointBaseUrl" -o tsv
