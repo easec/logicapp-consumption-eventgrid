@@ -8,7 +8,9 @@
     "logicAppCallbackUrl": { "type": "securestring" }
   },
   "variables": {
-    "appServicePlanName": "[concat(parameters('functionAppName'), '-plan')]"
+    "appServicePlanName": "[concat(parameters('functionAppName'), '-plan')]",
+    "storageConn": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]",
+    "contentShare": "[toLower(replace(parameters('functionAppName'), '-', ''))]"
   },
   "resources": [
     {
@@ -30,7 +32,10 @@
       "name": "[variables('appServicePlanName')]",
       "location": "[parameters('location')]",
       "kind": "functionapp",
-      "sku": { "name": "Y1", "tier": "Dynamic" },
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
       "properties": {}
     },
     {
@@ -39,7 +44,9 @@
       "name": "[parameters('functionAppName')]",
       "location": "[parameters('location')]",
       "kind": "functionapp",
-      "identity": { "type": "SystemAssigned" },
+      "identity": {
+        "type": "SystemAssigned"
+      },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
         "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
@@ -53,14 +60,15 @@
           "appSettings": [
             { "name": "FUNCTIONS_EXTENSION_VERSION", "value": "~4" },
             { "name": "FUNCTIONS_WORKER_RUNTIME", "value": "node" },
-
             { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
+
             { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" },
 
-            {
-              "name": "AzureWebJobsStorage",
-              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
-            },
+            { "name": "AzureWebJobsStorage", "value": "[variables('storageConn')]" },
+
+            { "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING", "value": "[variables('storageConn')]" },
+            { "name": "WEBSITE_CONTENTSHARE", "value": "[variables('contentShare')]" },
+
             { "name": "LOGICAPP_CALLBACK_URL", "value": "[parameters('logicAppCallbackUrl')]" }
           ]
         }
@@ -74,4 +82,5 @@
     }
   }
 }
+
 
