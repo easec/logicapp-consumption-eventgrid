@@ -68,8 +68,7 @@ stages:
 
           az eventgrid event-subscription delete \
             --name "$(eventSubscriptionName)" \
-            --source-resource-id "$(storageAccountResourceId)" \
-            --yes || true
+            --source-resource-id "$(storageAccountResourceId)" || true
 
           az eventgrid event-subscription create \
             --name "$(eventSubscriptionName)" \
