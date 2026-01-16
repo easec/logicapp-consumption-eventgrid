@@ -19,11 +19,13 @@
             "When_HTTP_is_called": {
               "type": "Request",
               "kind": "Http",
-              "inputs": { "schema": {} }
+              "inputs": {
+                "schema": {}
+              }
             }
           },
           "actions": {
-            "CheckValidation": {
+            "Check_Event_Type": {
               "type": "If",
               "expression": {
                 "equals": [
@@ -32,7 +34,7 @@
                 ]
               },
               "actions": {
-                "RespondToValidation": {
+                "Return_Validation_Code": {
                   "type": "Response",
                   "inputs": {
                     "statusCode": 200,
@@ -44,15 +46,14 @@
               },
               "else": {
                 "actions": {
-                  "ProcessEvent": {
+                  "Process_Event": {
                     "type": "Compose",
                     "inputs": "@triggerBody()"
                   }
                 }
               }
             }
-          },
-          "outputs": {}
+          }
         }
       }
     }
@@ -60,7 +61,8 @@
   "outputs": {
     "callbackUrl": {
       "type": "string",
-      "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_HTTP_is_called'),'2019-05-01').basePath]"
+      "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_HTTP_is_called'), '2019-05-01').value]"
     }
   }
 }
+
