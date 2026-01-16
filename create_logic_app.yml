@@ -8,7 +8,6 @@ variables:
 
 stages:
 - stage: Dev
-  displayName: Deploy Dev
   jobs:
   - job: Deploy
     pool:
@@ -16,7 +15,7 @@ stages:
     steps:
     - checkout: self
 
-    # 1️⃣ Deploy Logic App
+    # Deploy Logic App
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Logic App
       inputs:
@@ -29,22 +28,18 @@ stages:
         deploymentMode: Incremental
         deploymentOutputs: logicAppOutputs
 
-    # 2️⃣ Wait for Logic App readiness
-    - script: |
-        echo "Waiting 60 seconds for Logic App endpoint to become available..."
-        sleep 60
-      displayName: Wait for Logic App readiness
+    # Wait for endpoint readiness
+    - script: sleep 30
+      displayName: Wait for Logic App
 
-    # 3️⃣ Capture Logic App callback URL
+    # Capture callback URL (WITH sig)
     - script: |
-        echo "Logic App callback URL:"
-        echo "$(logicAppOutputs.callbackUrl.value)"
         echo "##vso[task.setvariable variable=logicAppCallbackUrl]$(logicAppOutputs.callbackUrl.value)"
-      displayName: Set pipeline variable for Event Grid
+      displayName: Set callback URL
 
-    # 4️⃣ Deploy Event Grid subscription via Azure CLI
+    # Create Event Grid subscription
     - task: AzureCLI@2
-      displayName: Deploy Event Grid Subscription
+      displayName: Create Event Grid subscription
       inputs:
         azureSubscription: $(azureServiceConnection)
         scriptType: bash
@@ -52,8 +47,6 @@ stages:
         inlineScript: |
           az eventgrid event-subscription create \
             --name iscala-archive-egsub \
-            --source-resource-id /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa \
+            --source-resource-id /subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/snapshottest-rg/providers/Microsoft.Storage/storageAccounts/snapshottestsa \
             --endpoint "$(logicAppCallbackUrl)" \
-            --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged \
-            --max-delivery-attempts 5 \
-            --event-ttl 1440
+            --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged
