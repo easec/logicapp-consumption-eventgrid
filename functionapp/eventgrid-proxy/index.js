@@ -1,22 +1,6 @@
 const https = require("https");
 const { URL } = require("url");
 
-function readJsonBody(req) {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => {
-      if (!data) return resolve(null);
-      try {
-        resolve(JSON.parse(data));
-      } catch (e) {
-        reject(e);
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
 function postJson(targetUrl, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(targetUrl);
@@ -47,23 +31,26 @@ function postJson(targetUrl, body) {
 module.exports = async function (context, req) {
   const logicAppUrl = process.env.LOGICAPP_CALLBACK_URL;
 
-  let body;
-  try {
-    body = await readJsonBody(req);
-  } catch (e) {
-    context.res = { status: 400, body: { error: "Invalid JSON" } };
+  // ✅ Azure Functions already parsed the body
+  const body = req.body;
+
+  if (!body) {
+    context.res = { status: 400, body: { error: "Empty body" } };
     return;
   }
 
-  // Handle Event Grid validation locally (most reliable)
   const first = Array.isArray(body) ? body[0] : body;
-  if (first && first.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
-    const code = first?.data?.validationCode;
-    context.res = { status: 200, body: { validationResponse: code } };
+
+  // ✅ Event Grid validation handled HERE
+  if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
+    context.res = {
+      status: 200,
+      body: { validationResponse: first.data?.validationCode }
+    };
     return;
   }
 
-  // Forward everything else to Logic App (with sig)
+  // Forward normal events to Logic App
   if (!logicAppUrl) {
     context.res = { status: 500, body: { error: "LOGICAPP_CALLBACK_URL not configured" } };
     return;
@@ -73,6 +60,9 @@ module.exports = async function (context, req) {
     await postJson(logicAppUrl, body);
     context.res = { status: 200, body: { ok: true } };
   } catch (e) {
-    context.res = { status: 502, body: { error: "Forwarding failed", details: String(e) } };
+    context.res = {
+      status: 502,
+      body: { error: "Forwarding failed", details: String(e) }
+    };
   }
 };
