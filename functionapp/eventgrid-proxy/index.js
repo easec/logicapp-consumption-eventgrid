@@ -33,6 +33,8 @@ module.exports = async function (context, req) {
 
   // ✅ Azure Functions already parsed the body
   const body = req.body;
+  context.log("EventGrid payload:", JSON.stringify(body));
+
 
   if (!body) {
     context.res = { status: 400, body: { error: "Empty body" } };
