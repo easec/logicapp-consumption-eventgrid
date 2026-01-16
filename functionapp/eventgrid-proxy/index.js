@@ -16,55 +16,79 @@ function postJson(targetUrl, body) {
       }
     };
 
-    const r = https.request(options, (resp) => {
-      let out = "";
-      resp.on("data", (c) => (out += c));
-      resp.on("end", () => resolve({ status: resp.statusCode || 200, body: out }));
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        resolve({
+          status: res.statusCode || 0,
+          body: data
+        });
+      });
     });
 
-    r.on("error", reject);
-    r.write(payload);
-    r.end();
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
   });
 }
 
 module.exports = async function (context, req) {
   const logicAppUrl = process.env.LOGICAPP_CALLBACK_URL;
 
-  // ✅ Azure Functions already parsed the body
+  // Azure Functions already parses JSON
   const body = req.body;
-  context.log("EventGrid payload:", JSON.stringify(body));
-
 
   if (!body) {
+    context.log("Request received with empty body");
     context.res = { status: 400, body: { error: "Empty body" } };
     return;
   }
 
+  // 🔍 Log incoming Event Grid payload
+  context.log("EventGrid payload:", JSON.stringify(body));
+
   const first = Array.isArray(body) ? body[0] : body;
 
-  // ✅ Event Grid validation handled HERE
+  // ✅ Handle Event Grid subscription validation
   if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
+    context.log("Handling SubscriptionValidationEvent");
     context.res = {
       status: 200,
-      body: { validationResponse: first.data?.validationCode }
+      body: {
+        validationResponse: first.data?.validationCode
+      }
     };
     return;
   }
 
-  // Forward normal events to Logic App
   if (!logicAppUrl) {
-    context.res = { status: 500, body: { error: "LOGICAPP_CALLBACK_URL not configured" } };
+    context.log("LOGICAPP_CALLBACK_URL not configured");
+    context.res = {
+      status: 500,
+      body: { error: "LOGICAPP_CALLBACK_URL not configured" }
+    };
     return;
   }
 
   try {
-    await postJson(logicAppUrl, body);
-    context.res = { status: 200, body: { ok: true } };
-  } catch (e) {
+    const resp = await postJson(logicAppUrl, body);
+
+    // 🔁 Log forwarding result
+    context.log("Forwarded to Logic App. Status:", resp.status);
+    if (resp.body) {
+      context.log("Logic App response body:", resp.body);
+    }
+
+    context.res = {
+      status: 200,
+      body: { ok: true, forwardedStatus: resp.status }
+    };
+  } catch (err) {
+    context.log("Error forwarding to Logic App:", err);
     context.res = {
       status: 502,
-      body: { error: "Forwarding failed", details: String(e) }
+      body: { error: "Forwarding failed", details: String(err) }
     };
   }
 };
