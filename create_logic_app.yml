@@ -46,6 +46,20 @@ stages:
         archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
         replaceExistingArchive: true
 
+    - script: |
+        echo "Listing contents of functionapp.zip"
+        python3 - << 'PY'
+        import zipfile
+
+        zip_path = "$(Build.ArtifactStagingDirectory)/functionapp.zip"
+        z = zipfile.ZipFile(zip_path)
+
+        for name in z.namelist():
+            print(name)
+        PY
+        displayName: Inspect function zip contents
+
+
     - task: AzureFunctionApp@2
       displayName: Deploy Function App package
       inputs:
