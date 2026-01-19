@@ -34,14 +34,28 @@ function postJson(targetUrl, body) {
 }
 
 module.exports = async function (context, req) {
+  // 🔑 Logic App callback URL (must include sig)
   const logicAppUrl = process.env.LOGICAPP_CALLBACK_URL;
 
-  // Azure Functions already parses JSON
+  if (!logicAppUrl) {
+    context.log("LOGICAPP_CALLBACK_URL is NOT set");
+  } else {
+    // Safe log (do not leak sig)
+    context.log(
+      "Calling Logic App URL:",
+      logicAppUrl.replace(/sig=.*/, "sig=REDACTED")
+    );
+  }
+
+  // Azure Functions already parses JSON body
   const body = req.body;
 
   if (!body) {
     context.log("Request received with empty body");
-    context.res = { status: 400, body: { error: "Empty body" } };
+    context.res = {
+      status: 400,
+      body: { error: "Empty body" }
+    };
     return;
   }
 
@@ -53,6 +67,7 @@ module.exports = async function (context, req) {
   // ✅ Handle Event Grid subscription validation
   if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
     context.log("Handling SubscriptionValidationEvent");
+
     context.res = {
       status: 200,
       body: {
@@ -63,7 +78,6 @@ module.exports = async function (context, req) {
   }
 
   if (!logicAppUrl) {
-    context.log("LOGICAPP_CALLBACK_URL not configured");
     context.res = {
       status: 500,
       body: { error: "LOGICAPP_CALLBACK_URL not configured" }
@@ -72,9 +86,9 @@ module.exports = async function (context, req) {
   }
 
   try {
+    // 🔁 Forward to Logic App
     const resp = await postJson(logicAppUrl, body);
 
-    // 🔁 Log forwarding result
     context.log("Forwarded to Logic App. Status:", resp.status);
     if (resp.body) {
       context.log("Logic App response body:", resp.body);
@@ -82,13 +96,20 @@ module.exports = async function (context, req) {
 
     context.res = {
       status: 200,
-      body: { ok: true, forwardedStatus: resp.status }
+      body: {
+        ok: true,
+        forwardedStatus: resp.status
+      }
     };
   } catch (err) {
     context.log("Error forwarding to Logic App:", err);
+
     context.res = {
       status: 502,
-      body: { error: "Forwarding failed", details: String(err) }
+      body: {
+        error: "Forwarding failed",
+        details: String(err)
+      }
     };
   }
 };
