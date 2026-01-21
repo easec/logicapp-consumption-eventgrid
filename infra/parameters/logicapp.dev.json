@@ -8,10 +8,11 @@
       "value": {
         "office365": {
           "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/swedencentral/managedApis/office365')]",
-          "connectionId": "[resourceId('Microsoft.Web/connections', 'office365')]",
+          "connectionId": "[resourceId('Microsoft.Web/connections','office365')]",
           "connectionName": "office365"
         }
       }
     }
   }
 }
+
