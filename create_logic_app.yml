@@ -98,10 +98,15 @@ stages:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
         resourceGroupName: $(resourceGroupName)
-        location: $(location)
+        location: $(rgLocation)
         csmFile: logicapp/logicapp.json
         csmParametersFile: infra/parameters/logicapp.dev.json
+        overrideParameters: >
+          -logicAppName "$(logicAppName)"
+          -location "$(rgLocation)"
+          -triggerName "$(triggerName)"
         deploymentMode: Incremental
+
 
     # (C) Recreate Event Grid subscription to the Function endpoint
     - task: AzureCLI@2
