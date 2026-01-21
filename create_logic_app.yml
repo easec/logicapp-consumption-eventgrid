@@ -69,6 +69,19 @@ stages:
         appName: 'fa-iscala-eg-proxy-dev'
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
 
+
+      # (B2) Deploy Logic App
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Logic App
+      inputs:
+        azureResourceManagerConnection: $(azureServiceConnection)
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        csmFile: logicapp/logicapp.json
+        csmParametersFile: infra/parameters/logicapp.dev.json
+        deploymentMode: Incremental
+
     # (C) Recreate Event Grid subscription to the Function endpoint
     - task: AzureCLI@2
       displayName: Create Event Grid subscription (to Function)
