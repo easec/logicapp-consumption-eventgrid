@@ -99,6 +99,67 @@ stages:
         appName: 'fa-iscala-eg-proxy-dev'
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
 
+    - task: AzureCLI@2
+      displayName: Pre-flight test Function endpoint (Event Grid validation)
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          echo "Testing Function endpoint: $(functionWebhookUrl)"
+
+          resp="$(curl -sS -i -X POST "$(functionWebhookUrl)" \
+            -H "Content-Type: application/json" \
+            -d '[{"eventType":"Microsoft.EventGrid.SubscriptionValidationEvent","data":{"validationCode":"abc123"}}]')"
+
+          echo "$resp"
+
+          # Must return HTTP 200 and include validationResponse
+          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Function did not return HTTP 200" && exit 1)
+          echo "$resp" | grep -q '"validationResponse"' || (echo 'ERROR: Missing "validationResponse" in body' && exit 1)
+
+          echo "OK: Function endpoint validates correctly."
+
+    - task: AzureCLI@2
+      displayName: Pre-flight test Function endpoint (Blob event path)
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          echo "Testing Function endpoint (BlobTierChanged payload): $(functionWebhookUrl)"
+
+          payload='[
+            {
+              "topic": "$(storageAccountResourceId)",
+              "subject": "/blobServices/default/containers/snapshot/blobs/devops-preflight.txt",
+              "eventType": "Microsoft.Storage.BlobTierChanged",
+              "id": "preflight-1",
+              "data": {
+                "accessTier": "Hot",
+                "previousTier": "Cool",
+                "url": "https://$(storageAccount).blob.core.windows.net/snapshot/devops-preflight.txt"
+              },
+              "metadataVersion": "1",
+              "eventTime": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"
+            }
+          ]'
+
+          resp="$(curl -sS -i -X POST "$(functionWebhookUrl)" \
+            -H "Content-Type: application/json" \
+            -d "$payload")"
+
+          echo "$resp"
+
+          # Must return HTTP 200 and include "ok": true
+          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Function did not return HTTP 200" && exit 1)
+          echo "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true` in body' && exit 1)
+
+          echo "OK: Function blob event path works."
+
+
     # 6) Recreate Event Grid subscription (always last)
     - task: AzureCLI@2
       displayName: Create Event Grid subscription (to Function)
