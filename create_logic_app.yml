@@ -118,6 +118,4 @@ stages:
           az eventgrid event-subscription show \
             --name "$(eventSubscriptionName)" \
             --source-resource-id "$(storageAccountResourceId)" \
-            --query "destination.endpointBaseUrl" -o tsv
-
-
+            --query "destination.endpointBaseUrl"
