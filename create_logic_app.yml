@@ -109,3 +109,4 @@ stages:
             --source-resource-id "$(storageAccountResourceId)" \
             --query "destination.endpointBaseUrl" -o tsv
 
+
