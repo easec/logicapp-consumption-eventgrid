@@ -25,6 +25,7 @@ stages:
     - checkout: self
 
     # (A) Deploy Function infra (ARM)
+
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Function App infra
       inputs:
@@ -34,8 +35,11 @@ stages:
         location: $(location)
         csmFile: infra/functionapp.json
         csmParametersFile: infra/parameters/functionapp.dev.json
+        overrideParameters: >
+          -logicAppCallbackUrl "$(logicAppCallbackUrl)"
         deploymentMode: Incremental
         deploymentOutputs: functionOutputs
+
 
     # capture function webhook url
     - script: |
