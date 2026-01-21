@@ -3,16 +3,16 @@ trigger:
 
 variables:
 - group: variable_iScaleArchive
+
 - name: azureServiceConnection
   value: 'Azure-Service-Connection'
-- name: resourceGroupName
-  value: 'rg-iscala-archive'
-- name: location
-  value: 'swedencentral'
+
 - name: storageAccountResourceId
-  value: '/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Storage/storageAccounts/snapshottestsa'
+  value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
+
 - name: eventSubscriptionName
-  value: 'iscala-archive-egsub'
+  value: "iscala-archive-egsub"
+
 
 
 stages:
