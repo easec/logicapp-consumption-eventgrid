@@ -3,7 +3,8 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "logicAppName": { "type": "string" },
-    "location": { "type": "string" }
+    "location": { "type": "string" },
+    "$connections": { "type": "object" }
   },
   "resources": [
     {
@@ -12,9 +13,16 @@
       "name": "[parameters('logicAppName')]",
       "location": "[parameters('location')]",
       "properties": {
+        "state": "Enabled",
         "definition": {
           "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
           "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "type": "Object",
+              "defaultValue": {}
+            }
+          },
           "triggers": {
             "When_HTTP_is_called": {
               "type": "Request",
@@ -25,34 +33,51 @@
             }
           },
           "actions": {
-            "Check_Event_Type": {
+            "NormalizedEvent": {
+              "type": "Compose",
+              "inputs": "@coalesce(triggerBody()?[0], triggerBody())"
+            },
+            "Is_Hot_Tier": {
               "type": "If",
+              "runAfter": {
+                "NormalizedEvent": [ "Succeeded" ]
+              },
               "expression": {
                 "equals": [
-                  "@triggerBody()[0]?['eventType']",
-                  "Microsoft.EventGrid.SubscriptionValidationEvent"
+                  "@outputs('NormalizedEvent')?['data']?['accessTier']",
+                  "Hot"
                 ]
               },
               "actions": {
-                "Return_Validation_Code": {
-                  "type": "Response",
+                "Send_an_email_(V2)": {
+                  "type": "ApiConnection",
                   "inputs": {
-                    "statusCode": 200,
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['office365']['connectionId']"
+                      }
+                    },
+                    "method": "post",
+                    "path": "/v2/Mail",
                     "body": {
-                      "validationResponse": "@triggerBody()[0]?['data']?['validationCode']"
+                      "To": "mats.johannesson@easec.se;mats.johannesson@iver.se",
+                      "Subject": "Rehydration finished (Hot tier)",
+                      "Body": "<p><strong>Rehydration process finished.</strong></p><p><strong>Blob:</strong> @{outputs('NormalizedEvent')?['subject']}</p><p><strong>Previous tier:</strong> @{outputs('NormalizedEvent')?['data']?['previousTier']}<br/><strong>Current tier:</strong> @{outputs('NormalizedEvent')?['data']?['accessTier']}</p><p><strong>URL:</strong> @{outputs('NormalizedEvent')?['data']?['url']}</p><p>Ready for the next step.</p>",
+                      "Importance": "Normal"
                     }
                   }
                 }
               },
               "else": {
-                "actions": {
-                  "Process_Event": {
-                    "type": "Compose",
-                    "inputs": "@triggerBody()"
-                  }
-                }
+                "actions": {}
               }
             }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": "[parameters('$connections')]"
           }
         }
       }
@@ -65,4 +90,5 @@
     }
   }
 }
+
 
