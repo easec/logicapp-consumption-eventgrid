@@ -119,6 +119,7 @@ stages:
           set -e
 
           echo "Using endpoint: $(functionWebhookUrl)"
+          echo "Storage scope: $(storageAccountResourceId)"
 
           az eventgrid event-subscription delete \
             --name "$(eventSubscriptionName)" \
@@ -133,4 +134,5 @@ stages:
           az eventgrid event-subscription show \
             --name "$(eventSubscriptionName)" \
             --source-resource-id "$(storageAccountResourceId)" \
-            --query "destination.endpointBaseUrl"
+            --query "destination.endpointBaseUrl" -o tsv
+
