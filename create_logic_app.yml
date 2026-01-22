@@ -135,7 +135,6 @@ stages:
           fi
 
           IKEY="$(echo "$CS" | sed -n 's/.*InstrumentationKey=\([^;]*\).*/\1/p')"
-
           if [ -z "$IKEY" ]; then
             echo "ERROR: Could not extract InstrumentationKey from connection string."
             echo "Connection string was: $CS"
@@ -144,25 +143,29 @@ stages:
 
           echo "Found InstrumentationKey: $IKEY"
 
-          AI_NAME="$(az resource list \
-            -g "$RG" \
-            --resource-type "Microsoft.Insights/components" \
-            --query "[?properties.InstrumentationKey=='$IKEY'].name | [0]" -o tsv)"
+          echo "Trying App Insights component list in RG..."
+          AI_NAME="$(az monitor app-insights component list \
+            --resource-group "$RG" \
+            --query "[?instrumentationKey=='$IKEY'].name | [0]" -o tsv)"
 
           if [ -z "$AI_NAME" ] || [ "$AI_NAME" = "None" ]; then
-            echo "Not found in RG. Falling back to subscription-wide search..."
-            AI_NAME="$(az resource list \
-              --resource-type "Microsoft.Insights/components" \
-              --query "[?properties.InstrumentationKey=='$IKEY'].name | [0]" -o tsv)"
+            echo "Not found in RG. Falling back to subscription-wide App Insights search..."
+            AI_NAME="$(az monitor app-insights component list \
+              --query "[?instrumentationKey=='$IKEY'].name | [0]" -o tsv)"
           fi
 
           if [ -z "$AI_NAME" ] || [ "$AI_NAME" = "None" ]; then
             echo "ERROR: Could not find an App Insights component with that InstrumentationKey."
+            echo "Debug: listing App Insights components in RG (name + ikey):"
+            az monitor app-insights component list \
+              --resource-group "$RG" \
+              --query "[].{name:name, ikey:instrumentationKey}" -o table
             exit 1
           fi
 
           echo "Discovered App Insights component name: $AI_NAME"
           echo "##vso[task.setvariable variable=appInsightsName]$AI_NAME"
+
 
     # 7) Pre-flight end-to-end checks (Function + Forwarding + AppInsights)
     - task: AzureCLI@2
