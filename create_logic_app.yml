@@ -10,9 +10,6 @@ variables:
 - name: functionAppName
   value: 'fa-iscala-eg-proxy-dev'
 
-- name: appInsightsName
-  value: 'fa-iscala-eg-proxy-dev-appi'
-
 - name: eventSubscriptionName
   value: 'iscala-archive-egsub'
 
@@ -28,6 +25,13 @@ stages:
       name: easec-pool
     steps:
     - checkout: self
+
+    # Optional: fail fast on JSON syntax issues
+    - bash: |
+        python3 -m json.tool infra/functionapp.json > /dev/null
+        python3 -m json.tool logicapp/logicapp.json > /dev/null
+        python3 -m json.tool infra/connections.json > /dev/null
+      displayName: Validate JSON templates
 
     # 1) Deploy Connections (must be before Logic App)
     - task: AzureResourceManagerTemplateDeployment@3
@@ -106,7 +110,61 @@ stages:
         appName: $(functionAppName)
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
 
-    # 6) Pre-flight end-to-end checks (Function + Forwarding + AppInsights)
+    # 6) Discover App Insights linked to Function App (no hardcoded name)
+    - task: AzureCLI@2
+      displayName: Discover Application Insights linked to Function App
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+
+          RG="$(resourceGroupName)"
+          FA="$(functionAppName)"
+
+          echo "Discovering App Insights for Function App: $FA (RG: $RG)"
+
+          CS="$(az functionapp config appsettings list \
+            -g "$RG" -n "$FA" \
+            --query "[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING'].value | [0]" -o tsv)"
+
+          if [ -z "$CS" ] || [ "$CS" = "None" ]; then
+            echo "ERROR: APPLICATIONINSIGHTS_CONNECTION_STRING not set on Function App."
+            exit 1
+          fi
+
+          IKEY="$(echo "$CS" | sed -n 's/.*InstrumentationKey=\([^;]*\).*/\1/p')"
+
+          if [ -z "$IKEY" ]; then
+            echo "ERROR: Could not extract InstrumentationKey from connection string."
+            echo "Connection string was: $CS"
+            exit 1
+          fi
+
+          echo "Found InstrumentationKey: $IKEY"
+
+          AI_NAME="$(az resource list \
+            -g "$RG" \
+            --resource-type "Microsoft.Insights/components" \
+            --query "[?properties.InstrumentationKey=='$IKEY'].name | [0]" -o tsv)"
+
+          if [ -z "$AI_NAME" ] || [ "$AI_NAME" = "None" ]; then
+            echo "Not found in RG. Falling back to subscription-wide search..."
+            AI_NAME="$(az resource list \
+              --resource-type "Microsoft.Insights/components" \
+              --query "[?properties.InstrumentationKey=='$IKEY'].name | [0]" -o tsv)"
+          fi
+
+          if [ -z "$AI_NAME" ] || [ "$AI_NAME" = "None" ]; then
+            echo "ERROR: Could not find an App Insights component with that InstrumentationKey."
+            exit 1
+          fi
+
+          echo "Discovered App Insights component name: $AI_NAME"
+          echo "##vso[task.setvariable variable=appInsightsName]$AI_NAME"
+
+    # 7) Pre-flight end-to-end checks (Function + Forwarding + AppInsights)
     - task: AzureCLI@2
       displayName: Pre-flight end-to-end check (Function + Forwarding + AppInsights)
       inputs:
@@ -185,7 +243,7 @@ stages:
 
           echo "OK: End-to-end pre-flight checks passed."
 
-    # 7) Recreate Event Grid subscription (always last)
+    # 8) Recreate Event Grid subscription (always last)
     - task: AzureCLI@2
       displayName: Create Event Grid subscription (to Function)
       inputs:
