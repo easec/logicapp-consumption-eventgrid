@@ -9,7 +9,8 @@
   },
   "variables": {
     "appServicePlanName": "[concat(parameters('functionAppName'), '-plan')]",
-    "contentShare": "[toLower(replace(parameters('functionAppName'), '-', ''))]"
+    "contentShare": "[toLower(replace(parameters('functionAppName'), '-', ''))]",
+    "appInsightsName": "[parameters('functionAppName')]"
   },
   "resources": [
     {
@@ -58,12 +59,31 @@
             { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" },
 
             {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+
+            {
               "name": "AzureWebJobsStorage",
-              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
+              "value": "[concat(
+                'DefaultEndpointsProtocol=https;AccountName=',
+                parameters('storageAccountName'),
+                ';AccountKey=',
+                listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value,
+                ';EndpointSuffix=',
+                environment().suffixes.storage
+              )]"
             },
             {
               "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
-              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
+              "value": "[concat(
+                'DefaultEndpointsProtocol=https;AccountName=',
+                parameters('storageAccountName'),
+                ';AccountKey=',
+                listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value,
+                ';EndpointSuffix=',
+                environment().suffixes.storage
+              )]"
             },
             { "name": "WEBSITE_CONTENTSHARE", "value": "[variables('contentShare')]" },
 
@@ -77,7 +97,10 @@
     "functionWebhookUrl": {
       "type": "string",
       "value": "[concat('https://', parameters('functionAppName'), '.azurewebsites.net/api/eventgrid-proxy')]"
+    },
+    "appInsightsName": {
+      "type": "string",
+      "value": "[variables('appInsightsName')]"
     }
   }
 }
-
