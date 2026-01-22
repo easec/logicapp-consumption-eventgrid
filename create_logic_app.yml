@@ -7,14 +7,21 @@ variables:
 - name: azureServiceConnection
   value: 'Azure-Service-Connection'
 
+- name: functionAppName
+  value: 'fa-iscala-eg-proxy-dev'
+
+- name: appInsightsName
+  value: 'fa-iscala-eg-proxy-dev-appi'
+
+- name: eventSubscriptionName
+  value: 'iscala-archive-egsub'
+
 - name: storageAccountResourceId
   value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
 
-- name: eventSubscriptionName
-  value: "iscala-archive-egsub"
-
 stages:
 - stage: Dev
+  displayName: Deploy Dev
   jobs:
   - job: Deploy
     pool:
@@ -58,7 +65,7 @@ stages:
         csmParametersFile: infra/parameters/functionapp.dev.json
         overrideParameters: >
           -logicAppCallbackUrl "$(logicAppCallbackUrl)"
-          -functionAppName "fa-iscala-eg-proxy-dev"
+          -functionAppName "$(functionAppName)"
           -location "$(rgLocation)"
           -storageAccountName "$(storageAccount)"
         deploymentMode: Incremental
@@ -96,71 +103,89 @@ stages:
       inputs:
         azureSubscription: $(azureServiceConnection)
         appType: functionApp
-        appName: 'fa-iscala-eg-proxy-dev'
+        appName: $(functionAppName)
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
 
+    # 6) Pre-flight end-to-end checks (Function + Forwarding + AppInsights)
     - task: AzureCLI@2
-      displayName: Pre-flight test Function endpoint (Event Grid validation)
+      displayName: Pre-flight end-to-end check (Function + Forwarding + AppInsights)
       inputs:
         azureSubscription: $(azureServiceConnection)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           set -e
-          echo "Testing Function endpoint: $(functionWebhookUrl)"
 
-          resp="$(curl -sS -i -X POST "$(functionWebhookUrl)" \
+          FUNC_URL="$(functionWebhookUrl)"
+          APPINSIGHTS_NAME="$(appInsightsName)"
+          RG="$(resourceGroupName)"
+
+          echo "Function endpoint: $FUNC_URL"
+          echo "App Insights: $APPINSIGHTS_NAME (RG: $RG)"
+
+          echo "== 1) Validate Function endpoint (Event Grid validation event) =="
+          resp="$(curl -sS -i -X POST "$FUNC_URL" \
             -H "Content-Type: application/json" \
             -d '[{"eventType":"Microsoft.EventGrid.SubscriptionValidationEvent","data":{"validationCode":"abc123"}}]')"
-
           echo "$resp"
+          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Validation test did not return HTTP 200" && exit 1)
+          echo "$resp" | grep -q '"validationResponse"' || (echo 'ERROR: Validation test missing "validationResponse"' && exit 1)
 
-          # Must return HTTP 200 and include validationResponse
-          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Function did not return HTTP 200" && exit 1)
-          echo "$resp" | grep -q '"validationResponse"' || (echo 'ERROR: Missing "validationResponse" in body' && exit 1)
-
-          echo "OK: Function endpoint validates correctly."
-
-    - task: AzureCLI@2
-      displayName: Pre-flight test Function endpoint (Blob event path)
-      inputs:
-        azureSubscription: $(azureServiceConnection)
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -e
-          echo "Testing Function endpoint (BlobTierChanged payload): $(functionWebhookUrl)"
-
+          echo "== 2) Test blob event path (expects ok=true) =="
           payload='[
             {
-              "topic": "$(storageAccountResourceId)",
+              "topic": "'"$(storageAccountResourceId)"'",
               "subject": "/blobServices/default/containers/snapshot/blobs/devops-preflight.txt",
               "eventType": "Microsoft.Storage.BlobTierChanged",
               "id": "preflight-1",
               "data": {
                 "accessTier": "Hot",
                 "previousTier": "Cool",
-                "url": "https://$(storageAccount).blob.core.windows.net/snapshot/devops-preflight.txt"
+                "url": "https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"
               },
               "metadataVersion": "1",
               "eventTime": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"
             }
           ]'
 
-          resp="$(curl -sS -i -X POST "$(functionWebhookUrl)" \
+          resp2="$(curl -sS -i -X POST "$FUNC_URL" \
             -H "Content-Type: application/json" \
             -d "$payload")"
+          echo "$resp2"
+          echo "$resp2" | grep -q "HTTP/1.1 200" || (echo "ERROR: Blob test did not return HTTP 200" && exit 1)
+          echo "$resp2" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Blob test missing `"ok": true`' && exit 1)
 
-          echo "$resp"
+          echo "== 3) Verify forwarding via Application Insights (200/202) =="
+          COUNT="$(az monitor app-insights query \
+            --app "$APPINSIGHTS_NAME" \
+            --resource-group "$RG" \
+            --analytics-query "traces
+              | where timestamp > ago(15m)
+              | where message contains \"Forwarded to Logic App. Status: 200\"
+                 or message contains \"Forwarded to Logic App. Status: 202\"
+              | count" \
+            --query "tables[0].rows[0][0]" -o tsv)"
 
-          # Must return HTTP 200 and include "ok": true
-          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Function did not return HTTP 200" && exit 1)
-          echo "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true` in body' && exit 1)
+          echo "Forward-success count (last 15m): $COUNT"
 
-          echo "OK: Function blob event path works."
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: No successful forward logs (200/202) found in last 15 minutes."
+            echo "Latest forward logs (any status):"
+            az monitor app-insights query \
+              --app "$APPINSIGHTS_NAME" \
+              --resource-group "$RG" \
+              --analytics-query "traces
+                | where timestamp > ago(30m)
+                | where message contains \"Forwarded to Logic App. Status\"
+                | order by timestamp desc
+                | take 10" \
+              -o jsonc
+            exit 1
+          fi
 
+          echo "OK: End-to-end pre-flight checks passed."
 
-    # 6) Recreate Event Grid subscription (always last)
+    # 7) Recreate Event Grid subscription (always last)
     - task: AzureCLI@2
       displayName: Create Event Grid subscription (to Function)
       inputs:
@@ -187,4 +212,3 @@ stages:
             --name "$(eventSubscriptionName)" \
             --source-resource-id "$(storageAccountResourceId)" \
             --query "destination.endpointBaseUrl" -o tsv
-
