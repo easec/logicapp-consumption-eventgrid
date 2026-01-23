@@ -189,7 +189,7 @@ stages:
           echo "== 3) Verify forwarding via App Insights (KQL via REST) =="
 
           AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
-          URI="https://management.azure.com${AI_ID}/query?api-version=2018-05-01-preview"
+          URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
 
           KQL="traces | where timestamp > ago(15m) | where message contains \"Forwarded to Logic App. Status: 200\" or message contains \"Forwarded to Logic App. Status: 202\" | count"
           BODY="$(python3 -c "import json; print(json.dumps({'query': r'''$KQL'''}))")"
