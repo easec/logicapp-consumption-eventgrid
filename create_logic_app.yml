@@ -30,7 +30,7 @@ stages:
         python3 -m json.tool infra/functionapp.json > /dev/null
         python3 -m json.tool logicapp/logicapp.json > /dev/null
         python3 -m json.tool infra/connections.json > /dev/null
-      displayName: Validate JSON templates
+      displayName: Validate templates (JSON)
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Connections
@@ -55,7 +55,7 @@ stages:
         deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Function App infra
+      displayName: Deploy Function infra
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
@@ -72,12 +72,11 @@ stages:
         deploymentOutputs: functionOutputs
 
     - script: |
-        echo "Function webhook URL: $(functionOutputs.functionWebhookUrl.value)"
         echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
       displayName: Set Function webhook URL
 
     - task: ArchiveFiles@2
-      displayName: Zip Function App
+      displayName: Zip Function code
       inputs:
         rootFolderOrFile: functionapp
         includeRootFolder: false
@@ -85,13 +84,8 @@ stages:
         archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
         replaceExistingArchive: true
 
-    - bash: |
-        echo "Listing contents of functionapp.zip"
-        python3 -c "import zipfile; z=zipfile.ZipFile('$(Build.ArtifactStagingDirectory)/functionapp.zip'); [print(n) for n in z.namelist()]"
-      displayName: Inspect function zip contents
-
     - task: AzureFunctionApp@2
-      displayName: Deploy Function App package
+      displayName: Deploy Function package
       inputs:
         azureSubscription: $(azureServiceConnection)
         appType: functionApp
@@ -99,123 +93,70 @@ stages:
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
 
     - task: AzureCLI@2
-      displayName: Discover Application Insights linked to Function App (REST)
+      displayName: Pre-flight check (Function + Forwarding + AppInsights)
       inputs:
         azureSubscription: $(azureServiceConnection)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           set -e
+
           RG="$(resourceGroupName)"
           FA="$(functionAppName)"
           SUB="$(az account show --query id -o tsv)"
-
-          echo "Discovering App Insights for Function App: $FA (RG: $RG)"
-          echo "Subscription: $SUB"
+          FUNC_URL="$(functionWebhookUrl)"
 
           CS="$(az functionapp config appsettings list -g "$RG" -n "$FA" --query "[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING'].value | [0]" -o tsv)"
-          if [ -z "$CS" ] || [ "$CS" = "None" ]; then
-            echo "ERROR: APPLICATIONINSIGHTS_CONNECTION_STRING not set on Function App."
-            exit 1
-          fi
+          [ -n "$CS" ] && [ "$CS" != "None" ] || (echo "ERROR: APPLICATIONINSIGHTS_CONNECTION_STRING not set" && exit 1)
 
           IKEY="$(echo "$CS" | sed -n 's/.*InstrumentationKey=\([^;]*\).*/\1/p')"
-          if [ -z "$IKEY" ]; then
-            echo "ERROR: Could not extract InstrumentationKey from connection string."
-            echo "Connection string was: $CS"
-            exit 1
-          fi
-          echo "Found InstrumentationKey: $IKEY"
+          [ -n "$IKEY" ] || (echo "ERROR: Could not extract InstrumentationKey" && exit 1)
 
           AI_LIST="$(az rest --method get --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Insights/components?api-version=2020-02-02" --query "value[].{name:name, ikey:properties.InstrumentationKey}" -o json)"
           AI_NAME="$(python3 -c "import json,sys; ikey=sys.argv[1].strip().lower(); items=json.loads(sys.stdin.read() or '[]'); print(next((it.get('name','') for it in items if (it.get('ikey','') or '').strip().lower()==ikey), ''))" "$IKEY" <<< "$AI_LIST")"
 
-          if [ -n "$AI_NAME" ]; then
-            echo "Discovered App Insights in RG: $AI_NAME"
-            echo "##vso[task.setvariable variable=appInsightsName]$AI_NAME"
-            echo "##vso[task.setvariable variable=appInsightsResourceGroup]$RG"
-            exit 0
+          if [ -z "$AI_NAME" ]; then
+            AI_LIST_SUB="$(az rest --method get --uri "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Insights/components?api-version=2020-02-02" --query "value[].{name:name, rg:resourceGroup, ikey:properties.InstrumentationKey}" -o json)"
+            AI_FOUND="$(python3 -c "import json,sys; ikey=sys.argv[1].strip().lower(); items=json.loads(sys.stdin.read() or '[]'); hit=next(((it.get('name',''), it.get('rg','')) for it in items if (it.get('ikey','') or '').strip().lower()==ikey), ('','')); print((hit[0]+'\t'+hit[1]).strip())" "$IKEY" <<< "$AI_LIST_SUB")"
+            [ -n "$AI_FOUND" ] || (echo "ERROR: Could not find App Insights component for ikey" && exit 1)
+            AI_NAME="$(echo "$AI_FOUND" | cut -f1)"
+            AI_RG="$(echo "$AI_FOUND" | cut -f2)"
+          else
+            AI_RG="$RG"
           fi
-
-          echo "Not found in RG. Falling back to subscription-wide search..."
-          AI_LIST_SUB="$(az rest --method get --uri "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Insights/components?api-version=2020-02-02" --query "value[].{name:name, rg:resourceGroup, ikey:properties.InstrumentationKey}" -o json)"
-          AI_FOUND="$(python3 -c "import json,sys; ikey=sys.argv[1].strip().lower(); items=json.loads(sys.stdin.read() or '[]'); hit=next(((it.get('name',''), it.get('rg','')) for it in items if (it.get('ikey','') or '').strip().lower()==ikey), ('','')); print((hit[0]+'\t'+hit[1]).strip())" "$IKEY" <<< "$AI_LIST_SUB")"
-
-          if [ -z "$AI_FOUND" ]; then
-            echo "ERROR: Could not find an App Insights component with that InstrumentationKey in the subscription."
-            echo "Debug RG list:"
-            echo "$AI_LIST" | python3 -m json.tool
-            exit 1
-          fi
-
-          AI_NAME="$(echo "$AI_FOUND" | cut -f1)"
-          AI_RG="$(echo "$AI_FOUND" | cut -f2)"
-
-          echo "Discovered App Insights: $AI_NAME (RG: $AI_RG)"
-          echo "##vso[task.setvariable variable=appInsightsName]$AI_NAME"
-          echo "##vso[task.setvariable variable=appInsightsResourceGroup]$AI_RG"
-
-    - task: AzureCLI@2
-      displayName: Pre-flight end-to-end check (Function + Forwarding + AppInsights REST)
-      inputs:
-        azureSubscription: $(azureServiceConnection)
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -e
-
-          FUNC_URL="$(functionWebhookUrl)"
-          AI_NAME="$(appInsightsName)"
-          AI_RG="$(appInsightsResourceGroup)"
-          SUB="$(az account show --query id -o tsv)"
 
           echo "Function endpoint: $FUNC_URL"
           echo "App Insights: $AI_NAME (RG: $AI_RG)"
-          echo "Subscription: $SUB"
 
-          echo "== 1) Validate Function endpoint =="
           resp="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" -d '[{"eventType":"Microsoft.EventGrid.SubscriptionValidationEvent","data":{"validationCode":"abc123"}}]')"
-          echo "$resp"
-          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Validation test did not return HTTP 200" && exit 1)
-          echo "$resp" | grep -q '"validationResponse"' || (echo 'ERROR: Validation test missing "validationResponse"' && exit 1)
+          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Validation test not HTTP 200" && exit 1)
+          echo "$resp" | grep -q '"validationResponse"' || (echo 'ERROR: Missing "validationResponse"' && exit 1)
 
-          echo "== 2) Test blob event path =="
           payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight-1","data":{"accessTier":"Hot","previousTier":"Cool","url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"},"metadataVersion":"1","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}]'
           resp2="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
-          echo "$resp2"
-          echo "$resp2" | grep -q "HTTP/1.1 200" || (echo "ERROR: Blob test did not return HTTP 200" && exit 1)
-          echo "$resp2" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Blob test missing `"ok": true`' && exit 1)
-
-          echo "== 3) Verify forwarding via App Insights (KQL via REST) =="
+          echo "$resp2" | grep -q "HTTP/1.1 200" || (echo "ERROR: Blob test not HTTP 200" && exit 1)
+          echo "$resp2" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true`' && exit 1)
 
           AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
           URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
-
           KQL="traces | where timestamp > ago(15m) | where message contains \"Forwarded to Logic App. Status: 200\" or message contains \"Forwarded to Logic App. Status: 202\" | count"
           BODY="$(python3 -c "import json; print(json.dumps({'query': r'''$KQL'''}))")"
-
           RESP_KQL="$(az rest --method post --uri "$URI" --headers "Content-Type=application/json" --body "$BODY" -o json)"
           COUNT="$(python3 -c "import json,sys; d=json.load(sys.stdin); print(int(d.get('tables',[{'rows':[[0]]}])[0].get('rows',[[0]])[0][0]))" <<< "$RESP_KQL")"
 
           echo "Forward-success count (last 15m): $COUNT"
-          if [ "$COUNT" -lt 1 ]; then
-            echo "ERROR: No successful forward logs (200/202) found in last 15 minutes."
-            exit 1
-          fi
+          [ "$COUNT" -ge 1 ] || (echo "ERROR: No successful forward logs found" && exit 1)
 
           echo "OK: End-to-end pre-flight checks passed."
 
     - task: AzureCLI@2
-      displayName: Create Event Grid subscription (to Function)
+      displayName: Create Event Grid subscription
       inputs:
         azureSubscription: $(azureServiceConnection)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           set -e
-          echo "Using endpoint: $(functionWebhookUrl)"
-          echo "Storage scope: $(storageAccountResourceId)"
-
           az eventgrid event-subscription delete --name "$(eventSubscriptionName)" --source-resource-id "$(storageAccountResourceId)" || true
 
           az eventgrid event-subscription create \
@@ -223,8 +164,3 @@ stages:
             --source-resource-id "$(storageAccountResourceId)" \
             --endpoint "$(functionWebhookUrl)" \
             --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged
-
-          az eventgrid event-subscription show \
-            --name "$(eventSubscriptionName)" \
-            --source-resource-id "$(storageAccountResourceId)" \
-            --query "destination.endpointBaseUrl" -o tsv
