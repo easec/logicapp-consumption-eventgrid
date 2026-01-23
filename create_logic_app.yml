@@ -87,13 +87,7 @@ stages:
 
     - bash: |
         echo "Listing contents of functionapp.zip"
-        python3 - << 'PY'
-        import zipfile
-        zip_path = "$(Build.ArtifactStagingDirectory)/functionapp.zip"
-        z = zipfile.ZipFile(zip_path)
-        for name in z.namelist():
-            print(name)
-        PY
+        python3 -c "import zipfile; z=zipfile.ZipFile('$(Build.ArtifactStagingDirectory)/functionapp.zip'); [print(n) for n in z.namelist()]"
       displayName: Inspect function zip contents
 
     - task: AzureFunctionApp@2
@@ -103,6 +97,63 @@ stages:
         appType: functionApp
         appName: $(functionAppName)
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
+
+    - task: AzureCLI@2
+      displayName: Discover Application Insights linked to Function App (REST)
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          RG="$(resourceGroupName)"
+          FA="$(functionAppName)"
+          SUB="$(az account show --query id -o tsv)"
+
+          echo "Discovering App Insights for Function App: $FA (RG: $RG)"
+          echo "Subscription: $SUB"
+
+          CS="$(az functionapp config appsettings list -g "$RG" -n "$FA" --query "[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING'].value | [0]" -o tsv)"
+          if [ -z "$CS" ] || [ "$CS" = "None" ]; then
+            echo "ERROR: APPLICATIONINSIGHTS_CONNECTION_STRING not set on Function App."
+            exit 1
+          fi
+
+          IKEY="$(echo "$CS" | sed -n 's/.*InstrumentationKey=\([^;]*\).*/\1/p')"
+          if [ -z "$IKEY" ]; then
+            echo "ERROR: Could not extract InstrumentationKey from connection string."
+            echo "Connection string was: $CS"
+            exit 1
+          fi
+          echo "Found InstrumentationKey: $IKEY"
+
+          AI_LIST="$(az rest --method get --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Insights/components?api-version=2020-02-02" --query "value[].{name:name, ikey:properties.InstrumentationKey}" -o json)"
+          AI_NAME="$(python3 -c "import json,sys; ikey=sys.argv[1].strip().lower(); items=json.loads(sys.stdin.read() or '[]'); print(next((it.get('name','') for it in items if (it.get('ikey','') or '').strip().lower()==ikey), ''))" "$IKEY" <<< "$AI_LIST")"
+
+          if [ -n "$AI_NAME" ]; then
+            echo "Discovered App Insights in RG: $AI_NAME"
+            echo "##vso[task.setvariable variable=appInsightsName]$AI_NAME"
+            echo "##vso[task.setvariable variable=appInsightsResourceGroup]$RG"
+            exit 0
+          fi
+
+          echo "Not found in RG. Falling back to subscription-wide search..."
+          AI_LIST_SUB="$(az rest --method get --uri "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Insights/components?api-version=2020-02-02" --query "value[].{name:name, rg:resourceGroup, ikey:properties.InstrumentationKey}" -o json)"
+          AI_FOUND="$(python3 -c "import json,sys; ikey=sys.argv[1].strip().lower(); items=json.loads(sys.stdin.read() or '[]'); hit=next(((it.get('name',''), it.get('rg','')) for it in items if (it.get('ikey','') or '').strip().lower()==ikey), ('','')); print((hit[0]+'\t'+hit[1]).strip())" "$IKEY" <<< "$AI_LIST_SUB")"
+
+          if [ -z "$AI_FOUND" ]; then
+            echo "ERROR: Could not find an App Insights component with that InstrumentationKey in the subscription."
+            echo "Debug RG list:"
+            echo "$AI_LIST" | python3 -m json.tool
+            exit 1
+          fi
+
+          AI_NAME="$(echo "$AI_FOUND" | cut -f1)"
+          AI_RG="$(echo "$AI_FOUND" | cut -f2)"
+
+          echo "Discovered App Insights: $AI_NAME (RG: $AI_RG)"
+          echo "##vso[task.setvariable variable=appInsightsName]$AI_NAME"
+          echo "##vso[task.setvariable variable=appInsightsResourceGroup]$AI_RG"
 
     - task: AzureCLI@2
       displayName: Pre-flight end-to-end check (Function + Forwarding + AppInsights REST)
@@ -141,24 +192,12 @@ stages:
           URI="https://management.azure.com${AI_ID}/query?api-version=2018-05-01-preview"
 
           KQL="traces | where timestamp > ago(15m) | where message contains \"Forwarded to Logic App. Status: 200\" or message contains \"Forwarded to Logic App. Status: 202\" | count"
-          BODY="$(python3 - <<PY
-import json
-print(json.dumps({"query": "$KQL"}))
-PY
-)"
+          BODY="$(python3 -c "import json; print(json.dumps({'query': r'''$KQL'''}))")"
+
           RESP_KQL="$(az rest --method post --uri "$URI" --headers "Content-Type=application/json" --body "$BODY" -o json)"
+          COUNT="$(python3 -c "import json,sys; d=json.load(sys.stdin); print(int(d.get('tables',[{'rows':[[0]]}])[0].get('rows',[[0]])[0][0]))" <<< "$RESP_KQL")"
 
-          COUNT="$(python3 - <<'PY' <<< "$RESP_KQL"
-import json, sys
-data=json.load(sys.stdin)
-try:
-    print(int(data["tables"][0]["rows"][0][0]))
-except Exception:
-    print(0)
-PY
-)"
           echo "Forward-success count (last 15m): $COUNT"
-
           if [ "$COUNT" -lt 1 ]; then
             echo "ERROR: No successful forward logs (200/202) found in last 15 minutes."
             exit 1
@@ -189,4 +228,3 @@ PY
             --name "$(eventSubscriptionName)" \
             --source-resource-id "$(storageAccountResourceId)" \
             --query "destination.endpointBaseUrl" -o tsv
-
