@@ -140,9 +140,10 @@ stages:
           AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
           URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
 
-          KQL="traces
+          KQL="requests
           | where timestamp > ago(30m)
-          | where (message has \"Forwarded to Logic App. Status: 200\" or message has \"Forwarded to Logic App. Status: 202\")
+          | where url has \"/api/eventgrid-proxy\"
+          | where success == true
           | count"
 
           BODY="$(python3 -c "import json; print(json.dumps({'query': r'''$KQL'''}))")"
@@ -151,14 +152,14 @@ stages:
           for i in 1 2 3 4 5 6; do
             RESP_KQL="$(az rest --method post --uri "$URI" --headers "Content-Type=application/json" --body "$BODY" -o json)"
             COUNT="$(python3 -c "import json,sys; d=json.load(sys.stdin); print(int(d.get('tables',[{'rows':[[0]]}])[0].get('rows',[[0]])[0][0]))" <<< "$RESP_KQL")"
-            echo "Forward-success count (last 30m) attempt $i: $COUNT"
+            echo "Function request success count (last 30m) attempt $i: $COUNT"
             if [ "$COUNT" -ge 1 ]; then
               break
             fi
             sleep 10
           done
 
-          [ "$COUNT" -ge 1 ] || (echo "ERROR: No successful forward logs found in App Insights traces" && exit 1)
+          [ "$COUNT" -ge 1 ] || (echo "ERROR: No successful Function requests found in App Insights" && exit 1)
 
           echo "OK: End-to-end pre-flight checks passed."
 
