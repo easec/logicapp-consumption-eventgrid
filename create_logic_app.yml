@@ -140,6 +140,7 @@ stages:
           AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
           URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
 
+          # Reliable gate: Function request telemetry (traces/dependencies may be absent depending on configuration)
           KQL="requests
           | where timestamp > ago(30m)
           | where url has \"/api/eventgrid-proxy\"
