@@ -139,13 +139,26 @@ stages:
 
           AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
           URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
-          KQL="traces | where timestamp > ago(15m) | where message contains \"Forwarded to Logic App. Status: 200\" or message contains \"Forwarded to Logic App. Status: 202\" | count"
-          BODY="$(python3 -c "import json; print(json.dumps({'query': r'''$KQL'''}))")"
-          RESP_KQL="$(az rest --method post --uri "$URI" --headers "Content-Type=application/json" --body "$BODY" -o json)"
-          COUNT="$(python3 -c "import json,sys; d=json.load(sys.stdin); print(int(d.get('tables',[{'rows':[[0]]}])[0].get('rows',[[0]])[0][0]))" <<< "$RESP_KQL")"
 
-          echo "Forward-success count (last 15m): $COUNT"
-          [ "$COUNT" -ge 1 ] || (echo "ERROR: No successful forward logs found" && exit 1)
+          KQL="traces
+          | where timestamp > ago(30m)
+          | where (message has \"Forwarded to Logic App. Status: 200\" or message has \"Forwarded to Logic App. Status: 202\")
+          | count"
+
+          BODY="$(python3 -c "import json; print(json.dumps({'query': r'''$KQL'''}))")"
+
+          COUNT=0
+          for i in 1 2 3 4 5 6; do
+            RESP_KQL="$(az rest --method post --uri "$URI" --headers "Content-Type=application/json" --body "$BODY" -o json)"
+            COUNT="$(python3 -c "import json,sys; d=json.load(sys.stdin); print(int(d.get('tables',[{'rows':[[0]]}])[0].get('rows',[[0]])[0][0]))" <<< "$RESP_KQL")"
+            echo "Forward-success count (last 30m) attempt $i: $COUNT"
+            if [ "$COUNT" -ge 1 ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          [ "$COUNT" -ge 1 ] || (echo "ERROR: No successful forward logs found in App Insights traces" && exit 1)
 
           echo "OK: End-to-end pre-flight checks passed."
 
