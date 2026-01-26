@@ -1,6 +1,12 @@
 const https = require("https");
 const { URL } = require("url");
 
+function redactSig(url) {
+  if (!url) return url;
+  // Remove/obfuscate sig query parameter to avoid leaking secrets in logs
+  return url.replace(/([?&]sig=)[^&]+/i, "$1REDACTED");
+}
+
 function postJson(targetUrl, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(targetUrl);
@@ -34,20 +40,15 @@ function postJson(targetUrl, body) {
 }
 
 module.exports = async function (context, req) {
-  // 🔑 Logic App callback URL (must include sig)
   const logicAppUrl = process.env.LOGICAPP_CALLBACK_URL;
 
+  // Always log URL safely (never leak sig)
   if (!logicAppUrl) {
     context.log("LOGICAPP_CALLBACK_URL is NOT set");
   } else {
-    // Safe log (do not leak sig)
-    context.log(
-      "Calling Logic App URL:",
-      logicAppUrl.replace(/sig=.*/, "sig=REDACTED")
-    );
+    context.log(`Calling Logic App URL: ${redactSig(logicAppUrl)}`);
   }
 
-  // Azure Functions already parses JSON body
   const body = req.body;
 
   if (!body) {
@@ -59,20 +60,21 @@ module.exports = async function (context, req) {
     return;
   }
 
-  // 🔍 Log incoming Event Grid payload
-  context.log("EventGrid payload:", JSON.stringify(body));
+  // Log payload (can be large; keep it as one string for consistent AI traces)
+  // If you want to reduce noise later, log only first event id/type.
+  context.log(`EventGrid payload: ${JSON.stringify(body)}`);
 
   const first = Array.isArray(body) ? body[0] : body;
 
-  // ✅ Handle Event Grid subscription validation
+  // Event Grid subscription validation
   if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
-    context.log("Handling SubscriptionValidationEvent");
+    const code = first?.data?.validationCode || "";
+    context.log(`Handling SubscriptionValidationEvent. code=${code}`);
 
     context.res = {
       status: 200,
-      body: {
-        validationResponse: first.data?.validationCode
-      }
+      headers: { "Content-Type": "application/json" },
+      body: { validationResponse: code }
     };
     return;
   }
@@ -86,12 +88,14 @@ module.exports = async function (context, req) {
   }
 
   try {
-    // 🔁 Forward to Logic App
     const resp = await postJson(logicAppUrl, body);
 
-    context.log("Forwarded to Logic App. Status:", resp.status);
+    // IMPORTANT: single-string log so KQL "message contains" works reliably
+    context.log(`Forwarded to Logic App. Status: ${resp.status}`);
+
     if (resp.body) {
-      context.log("Logic App response body:", resp.body);
+      // Keep as one string too
+      context.log(`Logic App response body: ${resp.body}`);
     }
 
     context.res = {
@@ -102,7 +106,8 @@ module.exports = async function (context, req) {
       }
     };
   } catch (err) {
-    context.log("Error forwarding to Logic App:", err);
+    // Single-string log for query reliability
+    context.log(`Error forwarding to Logic App: ${String(err && err.stack ? err.stack : err)}`);
 
     context.res = {
       status: 502,
@@ -113,3 +118,4 @@ module.exports = async function (context, req) {
     };
   }
 };
+
