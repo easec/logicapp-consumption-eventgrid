@@ -134,8 +134,32 @@ stages:
 
           payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight-1","data":{"accessTier":"Hot","previousTier":"Cool","url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"},"metadataVersion":"1","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}]'
           resp2="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
-          echo "$resp2" | grep -q "HTTP/1.1 200" || (echo "ERROR: Blob test not HTTP 200" && exit 1)
+          echo "== Blob test response =="
+          echo "$resp2"
+
+          # Extract body (after blank line) and validate JSON + ok==true
+          BODY_ONLY="$(printf "%s" "$resp2" | awk 'BEGIN{body=0} { if(body) print; if($0=="" || $0=="\r") body=1 }' | tr -d '\r')"
+
+          python3 - <<'PY' "$BODY_ONLY"
+          import json, sys
+          s = sys.argv[1].strip()
+          try:
+              data = json.loads(s)
+          except Exception as e:
+              print("ERROR: Body is not valid JSON:", e)
+              print("Body was:", s)
+              sys.exit(1)
+
+          if data.get("ok") is not True:
+              print('ERROR: Missing "ok": true')
+              print("Parsed JSON:", data)
+              sys.exit(1)
+
+          print("OK: ok=true")
+          PY
+
           echo "$resp2" | tr -d '\r\n' | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true`' && exit 1)
+
 
           echo "== Blob test raw response =="
           echo "$resp2"
