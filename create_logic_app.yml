@@ -135,7 +135,8 @@ stages:
           payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight-1","data":{"accessTier":"Hot","previousTier":"Cool","url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"},"metadataVersion":"1","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}]'
           resp2="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
           echo "$resp2" | grep -q "HTTP/1.1 200" || (echo "ERROR: Blob test not HTTP 200" && exit 1)
-          echo "$resp2" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true`' && exit 1)
+          echo "$resp2" | tr -d '\r\n' | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true`' && exit 1)
+
 
           AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
           URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
