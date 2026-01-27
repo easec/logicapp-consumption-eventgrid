@@ -169,14 +169,18 @@ module.exports = async function (context, req) {
 
     // IMPORTANT: return 200 to Event Grid so it doesn't keep retrying on us
     // (we're handling retries ourselves)
+
+    const success = resp.status === 200 || resp.status === 202;
+
     context.res = {
       status: 200,
       body: {
-        ok: resp.status >= 200 && resp.status < 300,
+        ok: success,
         forwardedStatus: resp.status,
         attempts: resp.attempts
       }
     };
+    
   } catch (err) {
     context.log(`Error forwarding to Logic App after retries: ${String(err && err.stack ? err.stack : err)}`);
 
