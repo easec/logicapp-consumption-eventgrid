@@ -101,6 +101,28 @@
                     "else": {
                       "actions": {}
                     }
+                  },
+                  "Return_OK": {
+                    "type": "Response",
+                    "runAfter": {
+                      "Is_Hot_Tier": [
+                        "Succeeded",
+                        "Failed",
+                        "Skipped",
+                        "TimedOut"
+                      ]
+                    },
+                    "inputs": {
+                      "statusCode": 200,
+                      "headers": {
+                        "Content-Type": "application/json"
+                      },
+                      "body": {
+                        "received": true,
+                        "eventType": "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
+                        "accessTier": "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')"
+                      }
+                    }
                   }
                 }
               }
@@ -123,3 +145,4 @@
     }
   }
 }
+
