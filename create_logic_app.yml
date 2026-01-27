@@ -137,6 +137,33 @@ stages:
           echo "$resp2" | grep -q "HTTP/1.1 200" || (echo "ERROR: Blob test not HTTP 200" && exit 1)
           echo "$resp2" | tr -d '\r\n' | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true`' && exit 1)
 
+          echo "== Blob test raw response =="
+          echo "$resp2"
+
+          echo "== Blob test: parse JSON body and assert ok==true =="
+          BODY_ONLY="$(printf "%s" "$resp2" | awk 'BEGIN{body=0} { if(body) print; if($0=="" || $0=="\r") body=1 }' | tr -d '\r')"
+          echo "Body only:"
+          echo "$BODY_ONLY"
+
+          python3 - <<'PY' "$BODY_ONLY"
+          import json, sys
+          s = sys.argv[1].strip()
+          try:
+              data = json.loads(s)
+          except Exception as e:
+              print("ERROR: response body is not valid JSON:", e)
+              print("Body was:", s)
+              sys.exit(1)
+
+          ok = data.get("ok", None)
+          if ok is not True:
+              print('ERROR: Missing "ok": true')
+              print("Parsed JSON:", data)
+              sys.exit(1)
+
+          print("OK: ok=true")
+          PY
+
 
           AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
           URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
