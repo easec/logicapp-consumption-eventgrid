@@ -92,8 +92,9 @@ stages:
         appName: $(functionAppName)
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
 
+    # Deploy Action Group (email)
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Alert Action Group
+      displayName: Deploy Alert Action Group (email)
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
@@ -101,14 +102,14 @@ stages:
         location: $(rgLocation)
         csmFile: infra/alerts-actiongroup.json
         overrideParameters: >
-          -location "$(rgLocation)"
-          -actionGroupName "ag-iscala-archive"
-          -emailAddress "mats.johannesson@iver.se"
+          -actionGroupName "ag-iscala-archive-sev2"
+          -emailAddress "mats.johannesson@easec.se"
         deploymentMode: Incremental
         deploymentOutputs: agOutputs
 
+    # Deploy Log Alert (Sev2)
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Forwarding Failure Alert
+      displayName: Deploy Alert Rule (forwarding failures)
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
@@ -117,7 +118,7 @@ stages:
         csmFile: infra/alerts-forwardingfail.json
         overrideParameters: >
           -location "$(rgLocation)"
-          -alertRuleName "alert-iscala-forward-fail"
+          -alertRuleName "alert-iscala-forward-fail-sev2"
           -appInsightsResourceId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Insights/components/$(appInsightsName)"
           -actionGroupResourceId "$(agOutputs.actionGroupResourceId.value)"
         deploymentMode: Incremental
