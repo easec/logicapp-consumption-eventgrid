@@ -13,11 +13,11 @@
       "name": "[parameters('dashboardName')]",
       "location": "[parameters('location')]",
       "properties": {
-        "lenses": {
-          "0": {
+        "lenses": [
+          {
             "order": 0,
-            "parts": {
-              "0": {
+            "parts": [
+              {
                 "position": { "x": 0, "y": 0, "rowSpan": 8, "colSpan": 16 },
                 "metadata": {
                   "type": "Extension/Microsoft_Azure_Monitoring/PartType/WorkbookPart",
@@ -30,9 +30,9 @@
                   }
                 }
               }
-            }
+            ]
           }
-        },
+        ],
         "metadata": {
           "model": {
             "timeRange": { "value": "24h" },
@@ -49,3 +49,4 @@
     }
   }
 }
+
