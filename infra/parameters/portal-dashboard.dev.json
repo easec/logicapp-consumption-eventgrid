@@ -5,7 +5,7 @@
     "dashboardName": { "value": "db-iscala-forwarding" },
     "location": { "value": "swedencentral" },
     "workbookResourceId": {
-      "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.Insights/workbooks/WORKBOOK_ID_GUID"
+      "value": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Insights/workbooks/7f3e2f8a-9d8a-4e5e-b5b8-3a4b9b8f7d21"
     }
   }
 }
