@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string" },
+    "workbookName": { "type": "string" },
+    "appInsightsResourceId": { "type": "string" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/workbooks",
+      "apiVersion": "2023-06-01",
+      "name": "[parameters('workbookName')]",
+      "location": "[parameters('location')]",
+      "kind": "shared",
+      "properties": {
+        "displayName": "EventGrid → Function → LogicApp Forwarding",
+        "sourceId": "[parameters('appInsightsResourceId')]",
+        "category": "workbook",
+        "serializedData": "[string(json(concat('{',
+          '\"version\":\"Notebook/1.0\",',
+          '\"items\":[',
+
+            '{\"type\":1,\"content\":{\"json\":\"# Forwarding health\\nShows successes/failures for fa-iscala-eg-proxy-dev forwarding to Logic App.\"}},',
+
+            '{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"requests\\n| where timestamp > ago(24h)\\n| where name has \\\"POST /api/eventgrid-proxy\\\"\\n| extend ok = tostring(customDimensions.ok), fwd = toint(customDimensions.forwardedStatus)\\n| summarize Success=countif(ok==\\\"true\\\" and fwd between (200 .. 299)), Failure=countif(ok==\\\"false\\\" or fwd >= 400), Total=count()\",\"size\":0,\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"tiles\",\"tileSettings\":{\"showBorder\":true,\"titleContent\":{\"columnName\":\"\",\"format\":\"text\"}},\"resourceType\":\"microsoft.insights/components\"}},',
+
+            '{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"requests\\n| where timestamp > ago(24h)\\n| where name has \\\"POST /api/eventgrid-proxy\\\"\\n| extend ok = tostring(customDimensions.ok), fwd = toint(customDimensions.forwardedStatus)\\n| extend Result = iff(ok==\\\"true\\\" and fwd between (200 .. 299), \\\"Success\\\", \\\"Failure\\\")\\n| summarize Count=count() by bin(timestamp, 5m), Result\\n| order by timestamp asc\",\"size\":0,\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"timechart\",\"resourceType\":\"microsoft.insights/components\"}},',
+
+            '{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"requests\\n| where timestamp > ago(24h)\\n| where name has \\\"POST /api/eventgrid-proxy\\\"\\n| extend ok = tostring(customDimensions.ok), fwd = toint(customDimensions.forwardedStatus), attempts = toint(customDimensions.attempts)\\n| where ok==\\\"false\\\" or fwd >= 400\\n| project timestamp, fwd, attempts, resultCode, operation_Name, name, url\\n| top 50 by timestamp desc\",\"size\":0,\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"table\",\"resourceType\":\"microsoft.insights/components\"}}',
+
+          '],',
+          '\"isLocked\":false',
+        '}')))]"
+      }
+    }
+  ],
+  "outputs": {
+    "workbookResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/workbooks', parameters('workbookName'))]"
+    }
+  }
+}
