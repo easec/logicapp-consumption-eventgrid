@@ -130,12 +130,9 @@ stages:
         resourceGroupName: $(resourceGroupName)
         location: $(rgLocation)
         csmFile: infra/alerts-forwardingfail.json
-        overrideParameters: >
-          -location "$(rgLocation)"
-          -alertRuleName "alert-iscala-forward-fail-sev2"
-          -appInsightsResourceId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Insights/components/$(appInsightsName)"
-          -actionGroupResourceId "$(agOutputs.actionGroupResourceId.value)"
+        csmParametersFile: infra/parameters/alerts-forwardingfail.dev.json
         deploymentMode: Incremental
+
 
     - task: AzureCLI@2
       displayName: Pre-flight check (Function + Forwarding + AppInsights)
