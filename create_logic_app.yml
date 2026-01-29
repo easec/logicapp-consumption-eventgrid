@@ -285,6 +285,19 @@ stages:
         csmFile: infra/portal-dashboard.json
         csmParametersFile: infra/parameters/portal-dashboard.dev.json
         deploymentMode: Incremental
+  
+    - task: AzureCLI@2
+      displayName: Verify dashboard exists
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az resource show \
+            --resource-group rg-iscala-archive \
+            --resource-type Microsoft.Portal/dashboards \
+            --name db-iscala-forwarding \
+            --query "{name:name, location:location, id:id}" -o json
 
     - task: AzureCLI@2
       displayName: Create Event Grid subscription
