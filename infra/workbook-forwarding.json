@@ -14,24 +14,10 @@
       "location": "[parameters('location')]",
       "kind": "shared",
       "properties": {
-        "displayName": "EventGrid → Function → LogicApp Forwarding",
+        "displayName": "Forwarding health (Function → Logic App)",
         "sourceId": "[parameters('appInsightsResourceId')]",
         "category": "workbook",
-        "serializedData": "[string(json(concat('{',
-          '\"version\":\"Notebook/1.0\",',
-          '\"items\":[',
-
-            '{\"type\":1,\"content\":{\"json\":\"# Forwarding health\\nShows successes/failures for fa-iscala-eg-proxy-dev forwarding to Logic App.\"}},',
-
-            '{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"requests\\n| where timestamp > ago(24h)\\n| where name has \\\"POST /api/eventgrid-proxy\\\"\\n| extend ok = tostring(customDimensions.ok), fwd = toint(customDimensions.forwardedStatus)\\n| summarize Success=countif(ok==\\\"true\\\" and fwd between (200 .. 299)), Failure=countif(ok==\\\"false\\\" or fwd >= 400), Total=count()\",\"size\":0,\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"tiles\",\"tileSettings\":{\"showBorder\":true,\"titleContent\":{\"columnName\":\"\",\"format\":\"text\"}},\"resourceType\":\"microsoft.insights/components\"}},',
-
-            '{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"requests\\n| where timestamp > ago(24h)\\n| where name has \\\"POST /api/eventgrid-proxy\\\"\\n| extend ok = tostring(customDimensions.ok), fwd = toint(customDimensions.forwardedStatus)\\n| extend Result = iff(ok==\\\"true\\\" and fwd between (200 .. 299), \\\"Success\\\", \\\"Failure\\\")\\n| summarize Count=count() by bin(timestamp, 5m), Result\\n| order by timestamp asc\",\"size\":0,\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"timechart\",\"resourceType\":\"microsoft.insights/components\"}},',
-
-            '{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"requests\\n| where timestamp > ago(24h)\\n| where name has \\\"POST /api/eventgrid-proxy\\\"\\n| extend ok = tostring(customDimensions.ok), fwd = toint(customDimensions.forwardedStatus), attempts = toint(customDimensions.attempts)\\n| where ok==\\\"false\\\" or fwd >= 400\\n| project timestamp, fwd, attempts, resultCode, operation_Name, name, url\\n| top 50 by timestamp desc\",\"size\":0,\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"table\",\"resourceType\":\"microsoft.insights/components\"}}',
-
-          '],',
-          '\"isLocked\":false',
-        '}')))]"
+        "serializedData": "{\"version\":\"Notebook/1.0\",\"items\":[{\"type\":1,\"content\":{\"json\":\"# Forwarding health\\nTracks forwarding successes/failures from the EventGrid proxy Function to the Logic App.\"}},{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"traces\\n| where timestamp > ago(24h)\\n| extend msg=tostring(message)\\n| summarize Success=countif(msg has \\\"Forwarded to Logic App. Status: 200\\\" or msg has \\\"Forwarded to Logic App. Status: 202\\\"), Failure=countif(msg has \\\"Forwarding failed after retries\\\" or msg has \\\"Non-2xx from Logic App\\\"), Total=countif(msg has \\\"Forwarded to Logic App. Status:\\\" or msg has \\\"Forwarding failed after retries\\\" or msg has \\\"Non-2xx from Logic App\\\")\",\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"tiles\",\"resourceType\":\"microsoft.insights/components\"}},{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"traces\\n| where timestamp > ago(24h)\\n| extend msg=tostring(message)\\n| extend Result=case(msg has \\\"Forwarded to Logic App. Status: 200\\\" or msg has \\\"Forwarded to Logic App. Status: 202\\\", \\\"Success\\\", msg has \\\"Forwarding failed after retries\\\" or msg has \\\"Non-2xx from Logic App\\\", \\\"Failure\\\", \\\"Other\\\")\\n| where Result in (\\\"Success\\\",\\\"Failure\\\")\\n| summarize Count=count() by bin(timestamp, 5m), Result\\n| order by timestamp asc\",\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"timechart\",\"resourceType\":\"microsoft.insights/components\"}},{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"traces\\n| where timestamp > ago(24h)\\n| where message has \\\"Forwarding failed after retries\\\" or message has \\\"Non-2xx from Logic App\\\"\\n| project timestamp, message, operation_Name\\n| top 50 by timestamp desc\",\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"table\",\"resourceType\":\"microsoft.insights/components\"}}],\"isLocked\":false}"
       }
     }
   ],
@@ -42,3 +28,4 @@
     }
   }
 }
+
