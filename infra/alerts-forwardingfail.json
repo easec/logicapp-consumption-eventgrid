@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string" },
+    "alertRuleName": { "type": "string" },
+    "appInsightsResourceId": { "type": "string" },
+    "actionGroupResourceId": { "type": "string" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2022-06-15",
+      "name": "[parameters('alertRuleName')]",
+      "location": "[parameters('location')]",
+      "kind": "LogAlert",
+      "properties": {
+        "displayName": "[parameters('alertRuleName')]",
+        "description": "Alerts when the EventGrid proxy Function fails to forward to Logic App (after retries or non-2xx).",
+        "enabled": true,
+        "severity": 2,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT10M",
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "traces\n| where timestamp > ago(10m)\n| where message has \"Forwarding failed after retries\" or message has \"Non-2xx from Logic App\"\n| summarize Failures=count()",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupResourceId')]"
+          ]
+        }
+      }
+    }
+  ]
+}
