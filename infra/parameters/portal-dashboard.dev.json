@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "dashboardName": { "value": "db-iscala-forwarding" },
+    "location": { "value": "swedencentral" },
+    "workbookResourceId": {
+      "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.Insights/workbooks/WORKBOOK_ID_GUID"
+    }
+  }
+}
