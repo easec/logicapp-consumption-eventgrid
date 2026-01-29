@@ -2,9 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "type": "string" },
     "actionGroupName": { "type": "string" },
-    "emailReceiverName": { "type": "string", "defaultValue": "PrimaryEmail" },
     "emailAddress": { "type": "string" }
   },
   "resources": [
@@ -18,7 +16,7 @@
         "enabled": true,
         "emailReceivers": [
           {
-            "name": "[parameters('emailReceiverName')]",
+            "name": "PrimaryEmail",
             "emailAddress": "[parameters('emailAddress')]",
             "useCommonAlertSchema": true
           }
@@ -33,3 +31,4 @@
     }
   }
 }
+
