@@ -271,9 +271,10 @@ stages:
         csmFile: infra/workbook-forwarding.json
         overrideParameters: >
           -location "$(rgLocation)"
-          -workbookName "$(workbookName)"
+          -workbookName "7f3e2f8a-9d8a-4e5e-b5b8-3a4b9b8f7d21"
           -appInsightsResourceId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Insights/components/$(appInsightsName)"
         deploymentMode: Incremental
+
 
     - task: AzureCLI@2
       displayName: Create Event Grid subscription
