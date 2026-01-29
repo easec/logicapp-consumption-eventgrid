@@ -95,6 +95,17 @@ stages:
         appName: $(functionAppName)
         package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
 
+    - task: AzureCLI@2
+      displayName: Set subscriptionId variable
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          SUB="$(az account show --query id -o tsv)"
+          echo "##vso[task.setvariable variable=subscriptionId]$SUB"
+
     # Deploy Action Group (email)
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Alert Action Group (email)
@@ -110,9 +121,9 @@ stages:
         deploymentMode: Incremental
         deploymentOutputs: agOutputs
 
-    # Deploy Log Alert (Sev2)
+   # Deploy Log Alert (Sev2)
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Alert Rule (forwarding failures)
+      displayName: Deploy Alert Rule (forwarding failures) Sev2
       inputs:
         azureResourceManagerConnection: $(azureServiceConnection)
         deploymentScope: Resource Group
