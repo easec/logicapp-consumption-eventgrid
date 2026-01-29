@@ -21,11 +21,16 @@
                 "position": { "x": 0, "y": 0, "rowSpan": 8, "colSpan": 16 },
                 "metadata": {
                   "type": "Extension/Microsoft_Azure_Monitoring/PartType/WorkbookPart",
+                  "inputs": [
+                    {
+                      "name": "resourceId",
+                      "value": "[parameters('workbookResourceId')]"
+                    }
+                  ],
                   "settings": {
                     "content": {
                       "title": "Forwarding failures / successes",
-                      "subtitle": "EventGrid → Function → Logic App",
-                      "workbookResourceId": "[parameters('workbookResourceId')]"
+                      "subtitle": "EventGrid → Function → Logic App"
                     }
                   }
                 }
@@ -41,12 +46,5 @@
         }
       }
     }
-  ],
-  "outputs": {
-    "dashboardResourceId": {
-      "type": "string",
-      "value": "[resourceId('Microsoft.Portal/dashboards', parameters('dashboardName'))]"
-    }
-  }
+  ]
 }
-
