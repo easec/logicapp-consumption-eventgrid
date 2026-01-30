@@ -6,6 +6,9 @@
     "location": { "type": "string" },
     "workbookResourceId": { "type": "string" }
   },
+  "variables": {
+    "workbookPortalUrl": "[concat('https://portal.azure.com/#blade/Microsoft_Azure_Monitoring/WorkbookBlade/resourceId/', uriComponent(parameters('workbookResourceId')))]"
+  },
   "resources": [
     {
       "type": "Microsoft.Portal/dashboards",
@@ -18,25 +21,14 @@
             "order": 0,
             "parts": [
               {
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "rowSpan": 8,
-                  "colSpan": 16
-                },
+                "position": { "x": 0, "y": 0, "rowSpan": 6, "colSpan": 16 },
                 "metadata": {
-                  "type": "Extension/Microsoft_Azure_Monitoring/PartType/WorkbookPart",
-                  "inputs": [
-                    {
-                      "name": "resourceId",
-                      "value": "[parameters('workbookResourceId')]"
-                    }
-                  ],
+                  "type": "Extension/Microsoft_Portal/PartType/MarkdownPart",
                   "settings": {
                     "content": {
-                      "workbookId": "[parameters('workbookResourceId')]",
-                      "title": "Forwarding failures / successes",
-                      "subtitle": "EventGrid → Function → Logic App"
+                      "settings": {
+                        "content": "[concat('# Forwarding dashboard\\n\\nThis dashboard uses a workbook for the detailed charts.\\n\\n- **Open workbook:** ', variables('workbookPortalUrl'), '\\n\\n(If you want tiles directly on the dashboard, pin them from the workbook UI.)')]"
+                      }
                     }
                   }
                 }
@@ -44,13 +36,7 @@
             ]
           }
         ],
-        "metadata": {
-          "model": {
-            "timeRange": {
-              "value": "24h"
-            }
-          }
-        }
+        "metadata": { "model": { "timeRange": { "value": "24h" } } }
       }
     }
   ]
