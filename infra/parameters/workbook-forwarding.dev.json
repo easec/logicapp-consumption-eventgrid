@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workbookId": {
+      "value": "7f3e2f8a-9d8a-4e5e-b5b8-3a4b9b8f7d21"
+    },
+    "location": {
+      "value": "swedencentral"
+    }
+  }
+}
