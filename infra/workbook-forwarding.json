@@ -2,18 +2,15 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "workbookId": {
-      "type": "string"
-    },
-    "location": {
-      "type": "string"
-    }
+    "workbookName": { "type": "string" },
+    "location": { "type": "string" },
+    "appInsightsResourceId": { "type": "string" }
   },
   "resources": [
     {
       "type": "Microsoft.Insights/workbooks",
       "apiVersion": "2022-04-01",
-      "name": "[parameters('workbookId')]",
+      "name": "[parameters('workbookName')]",
       "location": "[parameters('location')]",
       "kind": "shared",
       "properties": {
@@ -39,7 +36,7 @@
                 "visualization": "stat",
                 "resourceType": "microsoft.insights/components",
                 "resources": [
-                  "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Insights/components/fa-iscala-eg-proxy-dev"
+                  "[parameters('appInsightsResourceId')]"
                 ]
               }
             },
@@ -54,7 +51,7 @@
                 "visualization": "stat",
                 "resourceType": "microsoft.insights/components",
                 "resources": [
-                  "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Insights/components/fa-iscala-eg-proxy-dev"
+                  "[parameters('appInsightsResourceId')]"
                 ]
               }
             },
@@ -69,7 +66,7 @@
                 "visualization": "table",
                 "resourceType": "microsoft.insights/components",
                 "resources": [
-                  "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Insights/components/fa-iscala-eg-proxy-dev"
+                  "[parameters('appInsightsResourceId')]"
                 ]
               }
             }
@@ -78,7 +75,11 @@
         }
       }
     }
-  ]
+  ],
+  "outputs": {
+    "workbookResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/workbooks', parameters('workbookName'))]"
+    }
+  }
 }
-
-
