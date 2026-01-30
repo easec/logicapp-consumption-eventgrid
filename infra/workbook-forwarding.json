@@ -2,30 +2,83 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "type": "string" },
-    "workbookName": { "type": "string" },
-    "appInsightsResourceId": { "type": "string" }
+    "workbookId": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    }
   },
   "resources": [
     {
       "type": "Microsoft.Insights/workbooks",
-      "apiVersion": "2023-06-01",
-      "name": "[parameters('workbookName')]",
+      "apiVersion": "2022-04-01",
+      "name": "[parameters('workbookId')]",
       "location": "[parameters('location')]",
       "kind": "shared",
       "properties": {
         "displayName": "Forwarding health (Function → Logic App)",
-        "sourceId": "[parameters('appInsightsResourceId')]",
-        "category": "workbook",
-        "serializedData": "{\"version\":\"Notebook/1.0\",\"items\":[{\"type\":1,\"content\":{\"json\":\"# Forwarding health\\nTracks forwarding successes/failures from the EventGrid proxy Function to the Logic App.\"}},{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"traces\\n| where timestamp > ago(24h)\\n| extend msg=tostring(message)\\n| summarize Success=countif(msg has \\\"Forwarded to Logic App. Status: 200\\\" or msg has \\\"Forwarded to Logic App. Status: 202\\\"), Failure=countif(msg has \\\"Forwarding failed after retries\\\" or msg has \\\"Non-2xx from Logic App\\\"), Total=countif(msg has \\\"Forwarded to Logic App. Status:\\\" or msg has \\\"Forwarding failed after retries\\\" or msg has \\\"Non-2xx from Logic App\\\")\",\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"tiles\",\"resourceType\":\"microsoft.insights/components\"}},{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"traces\\n| where timestamp > ago(24h)\\n| extend msg=tostring(message)\\n| extend Result=case(msg has \\\"Forwarded to Logic App. Status: 200\\\" or msg has \\\"Forwarded to Logic App. Status: 202\\\", \\\"Success\\\", msg has \\\"Forwarding failed after retries\\\" or msg has \\\"Non-2xx from Logic App\\\", \\\"Failure\\\", \\\"Other\\\")\\n| where Result in (\\\"Success\\\",\\\"Failure\\\")\\n| summarize Count=count() by bin(timestamp, 5m), Result\\n| order by timestamp asc\",\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"timechart\",\"resourceType\":\"microsoft.insights/components\"}},{\"type\":9,\"content\":{\"version\":\"KqlItem/1.0\",\"query\":\"traces\\n| where timestamp > ago(24h)\\n| where message has \\\"Forwarding failed after retries\\\" or message has \\\"Non-2xx from Logic App\\\"\\n| project timestamp, message, operation_Name\\n| top 50 by timestamp desc\",\"timeContext\":{\"durationMs\":86400000},\"visualization\":\"table\",\"resourceType\":\"microsoft.insights/components\"}}],\"isLocked\":false}"
+        "serializedData": {
+          "version": "Notebook/1.0",
+          "items": [
+            {
+              "type": 1,
+              "name": "Title",
+              "content": {
+                "json": "## Forwarding health\nTracks forwarding successes and failures from the EventGrid proxy Function to the Logic App."
+              }
+            },
+            {
+              "type": 3,
+              "name": "SuccessCount",
+              "content": {
+                "version": "KqlItem/1.0",
+                "query": "traces\n| where timestamp > ago(30m)\n| where message contains \"Forwarded to Logic App. Status: 200\" or message contains \"Forwarded to Logic App. Status: 202\"\n| summarize Success=count()",
+                "size": 0,
+                "title": "Forward successes (last 30 min)",
+                "visualization": "stat",
+                "resourceType": "microsoft.insights/components",
+                "resources": [
+                  "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Insights/components/fa-iscala-eg-proxy-dev"
+                ]
+              }
+            },
+            {
+              "type": 3,
+              "name": "FailureCount",
+              "content": {
+                "version": "KqlItem/1.0",
+                "query": "traces\n| where timestamp > ago(30m)\n| where message contains \"Forwarded to Logic App\"\n| where message !contains \"Status: 200\" and message !contains \"Status: 202\"\n| summarize Failures=count()",
+                "size": 0,
+                "title": "Forward failures (last 30 min)",
+                "visualization": "stat",
+                "resourceType": "microsoft.insights/components",
+                "resources": [
+                  "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Insights/components/fa-iscala-eg-proxy-dev"
+                ]
+              }
+            },
+            {
+              "type": 3,
+              "name": "RecentFailures",
+              "content": {
+                "version": "KqlItem/1.0",
+                "query": "traces\n| where timestamp > ago(2h)\n| where message contains \"Forwarded to Logic App\"\n| where message !contains \"Status: 200\" and message !contains \"Status: 202\"\n| project timestamp, message\n| order by timestamp desc",
+                "size": 1,
+                "title": "Recent forwarding failures",
+                "visualization": "table",
+                "resourceType": "microsoft.insights/components",
+                "resources": [
+                  "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive/providers/Microsoft.Insights/components/fa-iscala-eg-proxy-dev"
+                ]
+              }
+            }
+          ],
+          "isLocked": false
+        }
       }
     }
-  ],
-  "outputs": {
-    "workbookResourceId": {
-      "type": "string",
-      "value": "[resourceId('Microsoft.Insights/workbooks', parameters('workbookName'))]"
-    }
-  }
+  ]
 }
+
 
