@@ -18,7 +18,12 @@
             "order": 0,
             "parts": [
               {
-                "position": { "x": 0, "y": 0, "rowSpan": 8, "colSpan": 16 },
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "rowSpan": 8,
+                  "colSpan": 16
+                },
                 "metadata": {
                   "type": "Extension/Microsoft_Azure_Monitoring/PartType/WorkbookPart",
                   "inputs": [
@@ -29,6 +34,7 @@
                   ],
                   "settings": {
                     "content": {
+                      "workbookId": "[parameters('workbookResourceId')]",
                       "title": "Forwarding failures / successes",
                       "subtitle": "EventGrid → Function → Logic App"
                     }
@@ -40,8 +46,9 @@
         ],
         "metadata": {
           "model": {
-            "timeRange": { "value": "24h" },
-            "filterLocale": "en-us"
+            "timeRange": {
+              "value": "24h"
+            }
           }
         }
       }
