@@ -269,11 +269,13 @@ stages:
         resourceGroupName: $(resourceGroupName)
         location: $(rgLocation)
         csmFile: infra/workbook-forwarding.json
+        csmParametersFile: infra/parameters/workbook-forwarding.dev.json
         overrideParameters: >
           -location "$(rgLocation)"
           -workbookName "7f3e2f8a-9d8a-4e5e-b5b8-3a4b9b8f7d21"
           -appInsightsResourceId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Insights/components/$(appInsightsName)"
         deploymentMode: Incremental
+
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Portal Dashboard (pins Workbook)
