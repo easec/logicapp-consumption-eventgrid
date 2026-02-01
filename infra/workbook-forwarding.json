@@ -15,64 +15,8 @@
       "kind": "shared",
       "properties": {
         "displayName": "Forwarding health (Function → Logic App)",
-        "serializedData": {
-          "version": "Notebook/1.0",
-          "items": [
-            {
-              "type": 1,
-              "name": "Title",
-              "content": {
-                "json": "## Forwarding health\nTracks forwarding successes and failures from the EventGrid proxy Function to the Logic App."
-              }
-            },
-            {
-              "type": 3,
-              "name": "SuccessCount",
-              "content": {
-                "version": "KqlItem/1.0",
-                "query": "traces\n| where timestamp > ago(30m)\n| where message contains \"Forwarded to Logic App. Status: 200\" or message contains \"Forwarded to Logic App. Status: 202\"\n| summarize Success=count()",
-                "size": 0,
-                "title": "Forward successes (last 30 min)",
-                "visualization": "stat",
-                "resourceType": "microsoft.insights/components",
-                "resources": [
-                  "[parameters('appInsightsResourceId')]"
-                ]
-              }
-            },
-            {
-              "type": 3,
-              "name": "FailureCount",
-              "content": {
-                "version": "KqlItem/1.0",
-                "query": "traces\n| where timestamp > ago(30m)\n| where message contains \"Forwarded to Logic App\"\n| where message !contains \"Status: 200\" and message !contains \"Status: 202\"\n| summarize Failures=count()",
-                "size": 0,
-                "title": "Forward failures (last 30 min)",
-                "visualization": "stat",
-                "resourceType": "microsoft.insights/components",
-                "resources": [
-                  "[parameters('appInsightsResourceId')]"
-                ]
-              }
-            },
-            {
-              "type": 3,
-              "name": "RecentFailures",
-              "content": {
-                "version": "KqlItem/1.0",
-                "query": "traces\n| where timestamp > ago(2h)\n| where message contains \"Forwarded to Logic App\"\n| where message !contains \"Status: 200\" and message !contains \"Status: 202\"\n| project timestamp, message\n| order by timestamp desc",
-                "size": 1,
-                "title": "Recent forwarding failures",
-                "visualization": "table",
-                "resourceType": "microsoft.insights/components",
-                "resources": [
-                  "[parameters('appInsightsResourceId')]"
-                ]
-              }
-            }
-          ],
-          "isLocked": false
-        }
+        "sourceId": "[parameters('appInsightsResourceId')]",
+        "serializedData": "{\n  \"version\": \"Notebook/1.0\",\n  \"items\": [\n    {\n      \"type\": 1,\n      \"name\": \"Title\",\n      \"content\": {\n        \"json\": \"## Forwarding health\\nTracks forwarding successes and failures from the EventGrid proxy Function to the Logic App.\"\n      }\n    },\n    {\n      \"type\": 3,\n      \"name\": \"SuccessCount\",\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"title\": \"Forward successes (last 30 min)\",\n        \"query\": \"traces\\n| where timestamp > ago(30m)\\n| where message contains \\\"Forwarded to Logic App. Status: 200\\\" or message contains \\\"Forwarded to Logic App. Status: 202\\\"\\n| summarize Success=count()\",\n        \"visualization\": \"stat\",\n        \"resourceType\": \"microsoft.insights/components\",\n        \"resources\": [\n          \"[parameters('appInsightsResourceId')]\"\n        ]\n      }\n    },\n    {\n      \"type\": 3,\n      \"name\": \"FailureCount\",\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"title\": \"Forward failures (last 30 min)\",\n        \"query\": \"traces\\n| where timestamp > ago(30m)\\n| where message contains \\\"Forwarded to Logic App\\\"\\n| where message !contains \\\"Status: 200\\\" and message !contains \\\"Status: 202\\\"\\n| summarize Failures=count()\",\n        \"visualization\": \"stat\",\n        \"resourceType\": \"microsoft.insights/components\",\n        \"resources\": [\n          \"[parameters('appInsightsResourceId')]\"\n        ]\n      }\n    },\n    {\n      \"type\": 3,\n      \"name\": \"RecentFailures\",\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"title\": \"Recent forwarding failures (last 2h)\",\n        \"query\": \"traces\\n| where timestamp > ago(2h)\\n| where message contains \\\"Forwarded to Logic App\\\"\\n| where message !contains \\\"Status: 200\\\" and message !contains \\\"Status: 202\\\"\\n| project timestamp, message\\n| order by timestamp desc\",\n        \"visualization\": \"table\",\n        \"resourceType\": \"microsoft.insights/components\",\n        \"resources\": [\n          \"[parameters('appInsightsResourceId')]\"\n        ]\n      }\n    }\n  ],\n  \"isLocked\": false\n}"
       }
     }
   ],
@@ -83,3 +27,4 @@
     }
   }
 }
+
