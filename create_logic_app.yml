@@ -69,11 +69,11 @@ stages:
         location: $(rgLocation)
         csmFile: infra/functionapp.json
         csmParametersFile: infra/parameters/functionapp.dev.json
-        overrideParameters: >
-          -logicAppCallbackUrl "$(logicAppCallbackUrl)"
-          -functionAppName "$(functionAppName)"
-          -location "$(rgLocation)"
-          -storageAccountName "$(storageAccount)"
+        # overrideParameters: >
+        #   -logicAppCallbackUrl "$(logicAppCallbackUrl)"
+        #   -functionAppName "$(functionAppName)"
+        #   -location "$(rgLocation)"
+        #   -storageAccountName "$(storageAccount)"
         deploymentMode: Incremental
         deploymentOutputs: functionOutputs
 
