@@ -4,9 +4,6 @@
   "parameters": {
     "functionAppName": { "value": "fa-iscala-eg-proxy-dev" },
     "location": { "value": "swedencentral" },
-    "storageAccountName": { "value": "saiscalaegproxydev01" },
-    "logicAppCallbackUrl": {
-      "value": "https://prod-18.swedencentral.logic.azure.com:443/workflows/c780c97f79df431b9eb68509dc1bd0ab/triggers/When_HTTP_is_called/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2FWhen_HTTP_is_called%2Frun&sv=1.0&sig=bGYnXNTHi6GlRRnpM-bCXhKlDn3h7NWCouxAUveHEsg"
-    }
+    "storageAccountName": { "value": "saiscalaegproxydev01" }
   }
 }
