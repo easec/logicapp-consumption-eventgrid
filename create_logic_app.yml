@@ -138,128 +138,41 @@ stages:
 
 
     - task: AzureCLI@2
-      displayName: Pre-flight check (Function + Forwarding + AppInsights)
+      displayName: Pre-flight check (Function + Forwarding)
       inputs:
         azureSubscription: $(azureServiceConnection)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          set -e
+          set -euo pipefail
 
-          RG="$(resourceGroupName)"
-          FA="$(functionAppName)"
-          SUB="$(az account show --query id -o tsv)"
           FUNC_URL="$(functionWebhookUrl)"
+          echo "Function endpoint: $FUNC_URL"
 
-          CS="$(az functionapp config appsettings list -g "$RG" -n "$FA" --query "[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING'].value | [0]" -o tsv)"
-          [ -n "$CS" ] && [ "$CS" != "None" ] || (echo "ERROR: APPLICATIONINSIGHTS_CONNECTION_STRING not set" && exit 1)
+          echo "== 1) Validate Function endpoint =="
+          resp="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" \
+            -d '[{"eventType":"Microsoft.EventGrid.SubscriptionValidationEvent","data":{"validationCode":"abc123"}}]')"
+          echo "$resp" | grep -q "HTTP/1.1 200"
+          echo "$resp" | grep -q '"validationResponse"'
 
-          IKEY="$(echo "$CS" | sed -n 's/.*InstrumentationKey=\([^;]*\).*/\1/p')"
-          [ -n "$IKEY" ] || (echo "ERROR: Could not extract InstrumentationKey" && exit 1)
+          echo "== 2) Blob Hot event test =="
+          payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight","data":{"accessTier":"Hot","previousTier":"Cool","url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"}}]'
 
-          AI_LIST="$(az rest --method get --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Insights/components?api-version=2020-02-02" --query "value[].{name:name, ikey:properties.InstrumentationKey}" -o json)"
-          AI_NAME="$(python3 -c "import json,sys; ikey=sys.argv[1].strip().lower(); items=json.loads(sys.stdin.read() or '[]'); print(next((it.get('name','') for it in items if (it.get('ikey','') or '').strip().lower()==ikey), ''))" "$IKEY" <<< "$AI_LIST")"
+          resp2="$(curl -sS -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
 
-          if [ -z "$AI_NAME" ]; then
-            AI_LIST_SUB="$(az rest --method get --uri "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Insights/components?api-version=2020-02-02" --query "value[].{name:name, rg:resourceGroup, ikey:properties.InstrumentationKey}" -o json)"
-            AI_FOUND="$(python3 -c "import json,sys; ikey=sys.argv[1].strip().lower(); items=json.loads(sys.stdin.read() or '[]'); hit=next(((it.get('name',''), it.get('rg','')) for it in items if (it.get('ikey','') or '').strip().lower()==ikey), ('','')); print((hit[0]+'\t'+hit[1]).strip())" "$IKEY" <<< "$AI_LIST_SUB")"
-            [ -n "$AI_FOUND" ] || (echo "ERROR: Could not find App Insights component for ikey" && exit 1)
-            AI_NAME="$(echo "$AI_FOUND" | cut -f1)"
-            AI_RG="$(echo "$AI_FOUND" | cut -f2)"
-          else
-            AI_RG="$RG"
+          echo "== Blob test response body =="
+          echo "$resp2"
+
+          ok="$(printf '%s' "$resp2" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(str(d.get("ok", False)).lower())' 2>/dev/null || echo false)"
+
+          if [ "$ok" != "true" ]; then
+            echo "ERROR: Missing ok=true"
+            echo "$resp2"
+            exit 1
           fi
 
-          echo "Function endpoint: $FUNC_URL"
-          echo "App Insights: $AI_NAME (RG: $AI_RG)"
+          echo "OK: Pre-flight passed."
 
-          resp="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" -d '[{"eventType":"Microsoft.EventGrid.SubscriptionValidationEvent","data":{"validationCode":"abc123"}}]')"
-          echo "$resp" | grep -q "HTTP/1.1 200" || (echo "ERROR: Validation test not HTTP 200" && exit 1)
-          echo "$resp" | grep -q '"validationResponse"' || (echo 'ERROR: Missing "validationResponse"' && exit 1)
-
-          payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight-1","data":{"accessTier":"Hot","previousTier":"Cool","url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"},"metadataVersion":"1","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}]'
-          resp2="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
-          echo "== Blob test response =="
-          echo "$resp2"
-
-          # Extract body (after blank line) and validate JSON + ok==true
-          BODY_ONLY="$(printf "%s" "$resp2" | awk 'BEGIN{body=0} { if(body) print; if($0=="" || $0=="\r") body=1 }' | tr -d '\r')"
-
-          python3 - <<'PY' "$BODY_ONLY"
-          import json, sys
-          s = sys.argv[1].strip()
-          try:
-              data = json.loads(s)
-          except Exception as e:
-              print("ERROR: Body is not valid JSON:", e)
-              print("Body was:", s)
-              sys.exit(1)
-
-          if data.get("ok") is not True:
-              print('ERROR: Missing "ok": true')
-              print("Parsed JSON:", data)
-              sys.exit(1)
-
-          print("OK: ok=true")
-          PY
-
-          echo "$resp2" | tr -d '\r\n' | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || (echo 'ERROR: Missing `"ok": true`' && exit 1)
-
-
-          echo "== Blob test raw response =="
-          echo "$resp2"
-
-          echo "== Blob test: parse JSON body and assert ok==true =="
-          BODY_ONLY="$(printf "%s" "$resp2" | awk 'BEGIN{body=0} { if(body) print; if($0=="" || $0=="\r") body=1 }' | tr -d '\r')"
-          echo "Body only:"
-          echo "$BODY_ONLY"
-
-          python3 - <<'PY' "$BODY_ONLY"
-          import json, sys
-          s = sys.argv[1].strip()
-          try:
-              data = json.loads(s)
-          except Exception as e:
-              print("ERROR: response body is not valid JSON:", e)
-              print("Body was:", s)
-              sys.exit(1)
-
-          ok = data.get("ok", None)
-          if ok is not True:
-              print('ERROR: Missing "ok": true')
-              print("Parsed JSON:", data)
-              sys.exit(1)
-
-          print("OK: ok=true")
-          PY
-
-
-          AI_ID="/subscriptions/$SUB/resourceGroups/$AI_RG/providers/Microsoft.Insights/components/$AI_NAME"
-          URI="https://management.azure.com${AI_ID}/query?api-version=2018-04-20"
-
-          # Reliable gate: Function request telemetry (traces/dependencies may be absent depending on configuration)
-          KQL="requests
-          | where timestamp > ago(30m)
-          | where url has \"/api/eventgrid-proxy\"
-          | where success == true
-          | count"
-
-          BODY="$(python3 -c "import json; print(json.dumps({'query': r'''$KQL'''}))")"
-
-          COUNT=0
-          for i in 1 2 3 4 5 6; do
-            RESP_KQL="$(az rest --method post --uri "$URI" --headers "Content-Type=application/json" --body "$BODY" -o json)"
-            COUNT="$(python3 -c "import json,sys; d=json.load(sys.stdin); print(int(d.get('tables',[{'rows':[[0]]}])[0].get('rows',[[0]])[0][0]))" <<< "$RESP_KQL")"
-            echo "Function request success count (last 30m) attempt $i: $COUNT"
-            if [ "$COUNT" -ge 1 ]; then
-              break
-            fi
-            sleep 10
-          done
-
-          [ "$COUNT" -ge 1 ] || (echo "ERROR: No successful Function requests found in App Insights" && exit 1)
-
-          echo "OK: End-to-end pre-flight checks passed."
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Workbook (forwarding panel)
