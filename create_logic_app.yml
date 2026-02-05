@@ -2,7 +2,7 @@ trigger:
 - main
 
 variables:
-- group: variable_iScaleArchive
+- group: variable_iScalaArchive
 
 - name: azureServiceConnection
   value: 'Azure-Service-Connection'
