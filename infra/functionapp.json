@@ -4,8 +4,7 @@
   "parameters": {
     "functionAppName": { "type": "string" },
     "location": { "type": "string" },
-    "storageAccountName": { "type": "string" },
-    "logicAppCallbackUrl": { "type": "securestring" }
+    "storageAccountName": { "type": "string" }
   },
   "variables": {
     "appServicePlanName": "[concat(parameters('functionAppName'), '-plan')]",
@@ -35,6 +34,18 @@
       "sku": { "name": "Y1", "tier": "Dynamic" },
       "properties": {}
     },
+
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web"
+      }
+    },
+
     {
       "type": "Microsoft.Web/sites",
       "apiVersion": "2023-01-01",
@@ -44,7 +55,8 @@
       "identity": { "type": "SystemAssigned" },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
-        "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+        "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]"
       ],
       "properties": {
         "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
@@ -58,13 +70,20 @@
             { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
             { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" },
 
-            { "name": "APPLICATIONINSIGHTS_CONNECTION_STRING", "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]" },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
 
-            { "name": "AzureWebJobsStorage", "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]" },
-            { "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING", "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]" },
-            { "name": "WEBSITE_CONTENTSHARE", "value": "[variables('contentShare')]" },
-
-            { "name": "LOGICAPP_CALLBACK_URL", "value": "[parameters('logicAppCallbackUrl')]" }
+            {
+              "name": "AzureWebJobsStorage",
+              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
+            },
+            {
+              "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
+            },
+            { "name": "WEBSITE_CONTENTSHARE", "value": "[variables('contentShare')]" }
           ]
         }
       }
