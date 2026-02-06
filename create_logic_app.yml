@@ -152,14 +152,28 @@ stages:
         PY
       displayName: Inspect function zip contents
 
-    # Deploy Function package
-    - task: AzureFunctionApp@2
-      displayName: Deploy Function package
+    # Deploy Function package (more reliable than AzureFunctionApp@2 ZIP Deploy)
+    - task: AzureCLI@2
+      displayName: Deploy Function package (config-zip)
       inputs:
         azureSubscription: $(azureServiceConnection)
-        appType: functionApp
-        appName: $(functionAppName)
-        package: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          RG="$(resourceGroupName)"
+          FUNC="$(functionAppName)"
+          ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
+
+          echo "Deploying ZIP to Function App: $FUNC (RG: $RG)"
+          az functionapp deployment source config-zip \
+            -g "$RG" -n "$FUNC" \
+            --src "$ZIP" \
+            -o none
+
+          echo "Restarting Function App..."
+          az functionapp restart -g "$RG" -n "$FUNC" -o none
+
 
     # Pre-flight check: validate Function + forwarding (tags preflight to avoid email)
     - task: AzureCLI@2
