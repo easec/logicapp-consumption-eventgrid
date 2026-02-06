@@ -96,21 +96,36 @@ stages:
           FUNC="$(functionAppName)"
           SUB="$(az account show --query id -o tsv)"
 
+          echo "Fetching callback URL for $LA / $TRIGGER in RG $RG (SUB $SUB)"
+
           CALLBACK="$(az rest --method POST \
             --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
-            --body '{}' --query "value" -o tsv)"
+            --body '{}' \
+            --query "value" -o tsv)"
 
-          [ -n "$CALLBACK" ] && [ "$CALLBACK" != "null" ]
+          if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+            echo "ERROR: Could not retrieve callback URL."
+            exit 1
+          fi
 
+          echo "Callback URL (sig redacted):"
+          echo "$CALLBACK" | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
+
+          echo "Setting LOGICAPP_CALLBACK_URL on Function App $FUNC"
           az functionapp config appsettings set \
             -g "$RG" -n "$FUNC" \
-            --settings "LOGICAPP_CALLBACK_URL=$CALLBACK" -o none
+            --settings "LOGICAPP_CALLBACK_URL=$CALLBACK" \
+            -o none
 
           echo "Restarting Function App to pick up settings..."
           az functionapp restart -g "$RG" -n "$FUNC"
 
-          echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK"
+          echo "Verifying appsetting exists (value redacted):"
+          az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+            --query "[?name=='LOGICAPP_CALLBACK_URL'].value | [0]" -o tsv \
+            | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
 
+          echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK"
 
     - task: ArchiveFiles@2
       displayName: Zip Function code
