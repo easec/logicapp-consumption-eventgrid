@@ -9,7 +9,9 @@
   "variables": {
     "appServicePlanName": "[concat(parameters('functionAppName'), '-plan')]",
     "contentShare": "[toLower(replace(parameters('functionAppName'), '-', ''))]",
-    "appInsightsName": "[parameters('functionAppName')]"
+    "appInsightsName": "[parameters('functionAppName')]",
+    "blobDataContributorRoleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions','ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+    "queueDataContributorRoleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions','974c5e8b-45b9-4653-ba55-5f855dd0fb88')]"
   },
   "resources": [
     {
@@ -32,11 +34,7 @@
       "name": "[variables('appServicePlanName')]",
       "location": "[parameters('location')]",
       "kind": "functionapp",
-      "sku": {
-        "name": "Y1",
-        "tier": "Dynamic"
-      },
-      "properties": {}
+      "sku": { "name": "Y1", "tier": "Dynamic" }
     },
 
     {
@@ -56,9 +54,7 @@
       "name": "[parameters('functionAppName')]",
       "location": "[parameters('location')]",
       "kind": "functionapp",
-      "identity": {
-        "type": "SystemAssigned"
-      },
+      "identity": { "type": "SystemAssigned" },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
         "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
@@ -74,9 +70,7 @@
             { "name": "FUNCTIONS_EXTENSION_VERSION", "value": "~4" },
             { "name": "FUNCTIONS_WORKER_RUNTIME", "value": "node" },
             { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
-
             { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" },
-
             { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
             { "name": "ENABLE_ORYX_BUILD", "value": "false" },
 
@@ -89,18 +83,43 @@
               "name": "AzureWebJobsStorage",
               "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
             },
-
             {
               "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
               "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
             },
-
-            {
-              "name": "WEBSITE_CONTENTSHARE",
-              "value": "[variables('contentShare')]"
-            }
+            { "name": "WEBSITE_CONTENTSHARE", "value": "[variables('contentShare')]" }
           ]
         }
+      }
+    },
+
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, parameters('functionAppName'), 'blob')]",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[variables('blobDataContributorRoleDefinitionId')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, parameters('functionAppName'), 'queue')]",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[variables('queueDataContributorRoleDefinitionId')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
       }
     }
   ],
