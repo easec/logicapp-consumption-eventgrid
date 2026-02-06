@@ -81,6 +81,37 @@ stages:
         echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
       displayName: Set Function webhook URL
 
+    - task: AzureCLI@2
+      displayName: Fetch Logic App callback URL -> set Function appsetting
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG="$(resourceGroupName)"
+          LA="$(logicAppName)"
+          TRIGGER="$(triggerName)"
+          FUNC="$(functionAppName)"
+          SUB="$(az account show --query id -o tsv)"
+
+          CALLBACK="$(az rest --method POST \
+            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+            --body '{}' --query "value" -o tsv)"
+
+          [ -n "$CALLBACK" ] && [ "$CALLBACK" != "null" ]
+
+          az functionapp config appsettings set \
+            -g "$RG" -n "$FUNC" \
+            --settings "LOGICAPP_CALLBACK_URL=$CALLBACK" -o none
+
+          echo "Restarting Function App to pick up settings..."
+          az functionapp restart -g "$RG" -n "$FUNC"
+
+          echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK"
+
+
     - task: ArchiveFiles@2
       displayName: Zip Function code
       inputs:
