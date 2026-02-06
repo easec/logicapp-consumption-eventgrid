@@ -25,13 +25,17 @@
         "allowBlobPublicAccess": false
       }
     },
+
     {
       "type": "Microsoft.Web/serverfarms",
       "apiVersion": "2023-01-01",
       "name": "[variables('appServicePlanName')]",
       "location": "[parameters('location')]",
       "kind": "functionapp",
-      "sku": { "name": "Y1", "tier": "Dynamic" },
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
       "properties": {}
     },
 
@@ -52,7 +56,9 @@
       "name": "[parameters('functionAppName')]",
       "location": "[parameters('location')]",
       "kind": "functionapp",
-      "identity": { "type": "SystemAssigned" },
+      "identity": {
+        "type": "SystemAssigned"
+      },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
         "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
@@ -68,7 +74,11 @@
             { "name": "FUNCTIONS_EXTENSION_VERSION", "value": "~4" },
             { "name": "FUNCTIONS_WORKER_RUNTIME", "value": "node" },
             { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
+
             { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" },
+
+            { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
+            { "name": "ENABLE_ORYX_BUILD", "value": "false" },
 
             {
               "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
@@ -79,11 +89,16 @@
               "name": "AzureWebJobsStorage",
               "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
             },
+
             {
               "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
               "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
             },
-            { "name": "WEBSITE_CONTENTSHARE", "value": "[variables('contentShare')]" }
+
+            {
+              "name": "WEBSITE_CONTENTSHARE",
+              "value": "[variables('contentShare')]"
+            }
           ]
         }
       }
@@ -100,3 +115,4 @@
     }
   }
 }
+
