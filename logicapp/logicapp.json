@@ -41,9 +41,7 @@
             "Is_Subscription_Validation": {
               "type": "If",
               "runAfter": {
-                "NormalizedEvent": [
-                  "Succeeded"
-                ]
+                "NormalizedEvent": [ "Succeeded" ]
               },
               "expression": {
                 "equals": [
@@ -72,9 +70,19 @@
                     "type": "If",
                     "runAfter": {},
                     "expression": {
-                      "equals": [
-                        "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
-                        "Hot"
+                      "and": [
+                        {
+                          "equals": [
+                            "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
+                            "Microsoft.Storage.BlobTierChanged"
+                          ]
+                        },
+                        {
+                          "equals": [
+                            "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
+                            "Hot"
+                          ]
+                        }
                       ]
                     },
                     "actions": {
@@ -105,12 +113,7 @@
                   "Return_OK": {
                     "type": "Response",
                     "runAfter": {
-                      "Is_Hot_Tier": [
-                        "Succeeded",
-                        "Failed",
-                        "Skipped",
-                        "TimedOut"
-                      ]
+                      "Is_Hot_Tier": [ "Succeeded", "Failed", "Skipped", "TimedOut" ]
                     },
                     "inputs": {
                       "statusCode": 200,
@@ -145,4 +148,3 @@
     }
   }
 }
-
