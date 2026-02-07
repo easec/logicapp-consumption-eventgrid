@@ -35,9 +35,9 @@
           "actions": {
             "NormalizedEvent": {
               "type": "Compose",
-              "runAfter": {},
               "inputs": "@coalesce(triggerBody()?[0], triggerBody())"
             },
+
             "Is_Subscription_Validation": {
               "type": "If",
               "runAfter": {
@@ -52,7 +52,6 @@
               "actions": {
                 "Return_Validation_Code": {
                   "type": "Response",
-                  "runAfter": {},
                   "inputs": {
                     "statusCode": 200,
                     "headers": {
@@ -66,29 +65,29 @@
               },
               "else": {
                 "actions": {
-                  "Is_Hot_Tier": {
+                  "Is_Hot_Tier_And_Not_Preflight": {
                     "type": "If",
-                    "runAfter": {},
                     "expression": {
                       "and": [
-                        {
-                          "equals": [
-                            "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
-                            "Microsoft.Storage.BlobTierChanged"
-                          ]
-                        },
                         {
                           "equals": [
                             "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
                             "Hot"
                           ]
+                        },
+                        {
+                          "not": {
+                            "contains": [
+                              "@toLower(coalesce(outputs('NormalizedEvent')?['subject'], ''))",
+                              "devops-preflight"
+                            ]
+                          }
                         }
                       ]
                     },
                     "actions": {
                       "Send_an_email_(V2)": {
                         "type": "ApiConnection",
-                        "runAfter": {},
                         "inputs": {
                           "host": {
                             "connection": {
@@ -110,10 +109,16 @@
                       "actions": {}
                     }
                   },
+
                   "Return_OK": {
                     "type": "Response",
                     "runAfter": {
-                      "Is_Hot_Tier": [ "Succeeded", "Failed", "Skipped", "TimedOut" ]
+                      "Is_Hot_Tier_And_Not_Preflight": [
+                        "Succeeded",
+                        "Skipped",
+                        "Failed",
+                        "TimedOut"
+                      ]
                     },
                     "inputs": {
                       "statusCode": 200,
@@ -148,3 +153,4 @@
     }
   }
 }
+
