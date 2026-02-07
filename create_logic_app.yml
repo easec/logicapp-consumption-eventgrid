@@ -75,6 +75,73 @@ stages:
         deploymentMode: Incremental
         deploymentOutputs: functionOutputs
 
+    - task: AzureCLI@2
+      displayName: Precheck can service connection create role assignments at RG scope?
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG="$(resourceGroupName)"
+          SUB="$(az account show --query id -o tsv)"
+          SCOPE="/subscriptions/$SUB/resourceGroups/$RG"
+
+          echo "Checking roleAssignments/write permission at scope: $SCOPE"
+
+          PRINCIPAL_TYPE="$(az account show --query user.type -o tsv)"
+          PRINCIPAL_NAME="$(az account show --query user.name -o tsv)"
+          echo "Logged in as type=$PRINCIPAL_TYPE name=$PRINCIPAL_NAME"
+
+          SP_OBJECT_ID=""
+          if [ "$PRINCIPAL_TYPE" = "servicePrincipal" ]; then
+            SP_OBJECT_ID="$(az ad sp show --id "$PRINCIPAL_NAME" --query id -o tsv 2>/dev/null || true)"
+          fi
+
+          if [ -z "$SP_OBJECT_ID" ] || [ "$SP_OBJECT_ID" = "null" ]; then
+            echo "Skipping create/delete precheck because SP objectId could not be resolved (directory read permissions)."
+            echo "If RBAC fails, grant Owner or User Access Administrator to the service connection at:"
+            echo "  $SCOPE"
+            exit 0
+          fi
+
+          echo "Service connection SP objectId: $SP_OBJECT_ID"
+
+          # Use uuidgen (available on most linux agents). Fallback to /proc random if missing.
+          if command -v uuidgen >/dev/null 2>&1; then
+            TEST_NAME="$(uuidgen)"
+          else
+            TEST_NAME="$(cat /proc/sys/kernel/random/uuid)"
+          fi
+
+          echo "Attempting a harmless role assignment create+delete (Reader) to validate permissions..."
+          set +e
+          az role assignment create \
+            --name "$TEST_NAME" \
+            --assignee-object-id "$SP_OBJECT_ID" \
+            --assignee-principal-type ServicePrincipal \
+            --role "Reader" \
+            --scope "$SCOPE" \
+            -o none
+          RC=$?
+          set -e
+
+          if [ $RC -ne 0 ]; then
+            echo ""
+            echo "ERROR: Service connection cannot create role assignments at:"
+            echo "  $SCOPE"
+            echo ""
+            echo "Fix: grant this identity one of:"
+            echo "  - Owner"
+            echo "  - User Access Administrator"
+            echo ""
+            echo "Service connection SP objectId: $SP_OBJECT_ID"
+            exit 1
+          fi
+
+          az role assignment delete --name "$TEST_NAME" --scope "$SCOPE" -o none || true
+          echo "OK: roleAssignments/write is allowed at $SCOPE"
 
 
 
