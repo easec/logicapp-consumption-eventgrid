@@ -317,7 +317,20 @@ stages:
           echo "$resp" | grep -q '"validationResponse"'
 
           echo "== 2) Blob Hot event test (preflight tagged; Logic App ignores email) =="
-          payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight","data":{"accessTier":"Hot","previousTier":"Cool","isPreflight":true,"url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"},"metadataVersion":"1","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}]'
+          payload='[{
+            "topic":"'"$(storageAccountResourceId)"'",
+            "subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt",
+            "eventType":"Microsoft.Storage.BlobTierChanged",
+            "id":"preflight",
+            "data":{
+              "accessTier":"Hot",
+              "previousTier":"Cool",
+              "isPreflight":true,
+              "url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"
+            },
+            "metadataVersion":"1",
+            "eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"
+          }]'
 
           resp2="$(curl -sS -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
 
@@ -332,6 +345,7 @@ stages:
           fi
 
           echo "OK: Pre-flight passed."
+
 
     # Create/Update Event Grid subscription -> Function
     - task: AzureCLI@2
