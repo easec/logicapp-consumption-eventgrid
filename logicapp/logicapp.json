@@ -35,13 +35,68 @@
           "actions": {
             "NormalizedEvent": {
               "type": "Compose",
+              "runAfter": {},
               "inputs": "@coalesce(triggerBody()?[0], triggerBody())"
+            },
+
+            "Validate_Event": {
+              "type": "If",
+              "runAfter": {
+                "NormalizedEvent": [ "Succeeded" ]
+              },
+              "expression": {
+                "or": [
+                  {
+                    "equals": [
+                      "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
+                      "Microsoft.EventGrid.SubscriptionValidationEvent"
+                    ]
+                  },
+                  {
+                    "equals": [
+                      "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
+                      "Microsoft.Storage.BlobCreated"
+                    ]
+                  },
+                  {
+                    "equals": [
+                      "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
+                      "Microsoft.Storage.BlobTierChanged"
+                    ]
+                  }
+                ]
+              },
+              "actions": {},
+              "else": {
+                "actions": {
+                  "Return_Bad_Request_InvalidEventType": {
+                    "type": "Response",
+                    "runAfter": {},
+                    "inputs": {
+                      "statusCode": 400,
+                      "headers": {
+                        "Content-Type": "application/json"
+                      },
+                      "body": {
+                        "received": false,
+                        "error": "Invalid eventType (not allowed)",
+                        "allowedEventTypes": [
+                          "Microsoft.EventGrid.SubscriptionValidationEvent",
+                          "Microsoft.Storage.BlobCreated",
+                          "Microsoft.Storage.BlobTierChanged"
+                        ],
+                        "gotEventType": "@coalesce(outputs('NormalizedEvent')?['eventType'], '')"
+                      }
+                    }
+                  }
+                }
+              }
             },
 
             "Is_Subscription_Validation": {
               "type": "If",
               "runAfter": {
-                "NormalizedEvent": [ "Succeeded" ]
+                "Validate_Event": [ "Succeeded" ]
               },
               "expression": {
                 "equals": [
@@ -52,6 +107,7 @@
               "actions": {
                 "Return_Validation_Code": {
                   "type": "Response",
+                  "runAfter": {},
                   "inputs": {
                     "statusCode": 200,
                     "headers": {
@@ -65,10 +121,89 @@
               },
               "else": {
                 "actions": {
-                  "Is_Hot_Tier_And_Not_Preflight": {
+                  "Validate_Storage_Fields": {
                     "type": "If",
+                    "runAfter": {},
                     "expression": {
                       "and": [
+                        {
+                          "not": {
+                            "equals": [
+                              "@coalesce(outputs('NormalizedEvent')?['subject'], '')",
+                              ""
+                            ]
+                          }
+                        },
+                        {
+                          "not": {
+                            "equals": [
+                              "@coalesce(outputs('NormalizedEvent')?['data'], null)",
+                              null
+                            ]
+                          }
+                        },
+                        {
+                          "not": {
+                            "equals": [
+                              "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
+                              ""
+                            ]
+                          }
+                        },
+                        {
+                          "not": {
+                            "equals": [
+                              "@coalesce(outputs('NormalizedEvent')?['data']?['url'], '')",
+                              ""
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "actions": {},
+                    "else": {
+                      "actions": {
+                        "Return_Bad_Request_MissingFields": {
+                          "type": "Response",
+                          "runAfter": {},
+                          "inputs": {
+                            "statusCode": 400,
+                            "headers": {
+                              "Content-Type": "application/json"
+                            },
+                            "body": {
+                              "received": false,
+                              "error": "Invalid Storage event payload (missing required fields)",
+                              "required": [
+                                "subject",
+                                "data.accessTier",
+                                "data.url"
+                              ],
+                              "got": {
+                                "subject": "@coalesce(outputs('NormalizedEvent')?['subject'], '')",
+                                "accessTier": "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
+                                "url": "@coalesce(outputs('NormalizedEvent')?['data']?['url'], '')"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+
+                  "Is_Hot_Tier_And_Not_Preflight": {
+                    "type": "If",
+                    "runAfter": {
+                      "Validate_Storage_Fields": [ "Succeeded" ]
+                    },
+                    "expression": {
+                      "and": [
+                        {
+                          "equals": [
+                            "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
+                            "Microsoft.Storage.BlobTierChanged"
+                          ]
+                        },
                         {
                           "equals": [
                             "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
@@ -77,9 +212,9 @@
                         },
                         {
                           "not": {
-                            "contains": [
-                              "@toLower(coalesce(outputs('NormalizedEvent')?['subject'], ''))",
-                              "devops-preflight"
+                            "equals": [
+                              "@bool(coalesce(outputs('NormalizedEvent')?['data']?['isPreflight'], false))",
+                              true
                             ]
                           }
                         }
@@ -88,6 +223,7 @@
                     "actions": {
                       "Send_an_email_(V2)": {
                         "type": "ApiConnection",
+                        "runAfter": {},
                         "inputs": {
                           "host": {
                             "connection": {
@@ -105,20 +241,13 @@
                         }
                       }
                     },
-                    "else": {
-                      "actions": {}
-                    }
+                    "else": { "actions": {} }
                   },
 
                   "Return_OK": {
                     "type": "Response",
                     "runAfter": {
-                      "Is_Hot_Tier_And_Not_Preflight": [
-                        "Succeeded",
-                        "Skipped",
-                        "Failed",
-                        "TimedOut"
-                      ]
+                      "Is_Hot_Tier_And_Not_Preflight": [ "Succeeded", "Failed", "Skipped", "TimedOut" ]
                     },
                     "inputs": {
                       "statusCode": 200,
@@ -153,4 +282,3 @@
     }
   }
 }
-
