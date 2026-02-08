@@ -2,16 +2,28 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "type": "string" }
+    "location": { "type": "string" },
+
+    "office365ConnectionName": { "type": "string" },
+    "office365DisplayName": {
+      "type": "string",
+      "defaultValue": "office365"
+    },
+
+    "eventGridConnectionName": { "type": "string" },
+    "eventGridDisplayName": {
+      "type": "string",
+      "defaultValue": "azureeventgrid"
+    }
   },
   "resources": [
     {
       "type": "Microsoft.Web/connections",
       "apiVersion": "2016-06-01",
-      "name": "office365",
+      "name": "[parameters('office365ConnectionName')]",
       "location": "[parameters('location')]",
       "properties": {
-        "displayName": "office365",
+        "displayName": "[parameters('office365DisplayName')]",
         "api": {
           "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/office365')]"
         }
@@ -20,18 +32,24 @@
     {
       "type": "Microsoft.Web/connections",
       "apiVersion": "2016-06-01",
-      "name": "azureeventgrid-1",
+      "name": "[parameters('eventGridConnectionName')]",
       "location": "[parameters('location')]",
       "properties": {
-        "displayName": "azureeventgrid",
+        "displayName": "[parameters('eventGridDisplayName')]",
         "api": {
           "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/azureeventgrid')]"
         }
       }
     }
-  ]
+  ],
+  "outputs": {
+    "office365ConnectionResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Web/connections', parameters('office365ConnectionName'))]"
+    },
+    "eventGridConnectionResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Web/connections', parameters('eventGridConnectionName'))]"
+    }
+  }
 }
-
-
-
-
