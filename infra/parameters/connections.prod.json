@@ -3,8 +3,10 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": { "value": "swedencentral" },
-    "office365ConnectionName": { "value": "office365produktion" },
-    "office365DisplayName": { "value": "office365produktion" },
+
+    "office365ConnectionName": { "value": "office365production" },
+    "office365DisplayName": { "value": "office365production" },
+
     "eventGridConnectionName": { "value": "azureeventgrid-1" },
     "eventGridDisplayName": { "value": "azureeventgrid" }
   }
