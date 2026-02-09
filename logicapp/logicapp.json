@@ -4,7 +4,8 @@
   "parameters": {
     "logicAppName": { "type": "string" },
     "location": { "type": "string" },
-    "$connections": { "type": "object" }
+    "$connections": { "type": "object" },
+    "emailTo": { "type": "string" }
   },
   "resources": [
     {
@@ -21,6 +22,10 @@
             "$connections": {
               "type": "Object",
               "defaultValue": {}
+            },
+            "emailTo": {
+              "type": "String",
+              "defaultValue": ""
             }
           },
           "triggers": {
@@ -39,7 +44,7 @@
               "inputs": "@coalesce(triggerBody()?[0], triggerBody())"
             },
 
-            "Validate_Event": {
+            "Validate_EventType": {
               "type": "If",
               "runAfter": {
                 "NormalizedEvent": [ "Succeeded" ]
@@ -69,7 +74,7 @@
               "actions": {},
               "else": {
                 "actions": {
-                  "Return_Bad_Request_InvalidEventType": {
+                  "Return_400_InvalidEventType": {
                     "type": "Response",
                     "runAfter": {},
                     "inputs": {
@@ -96,7 +101,7 @@
             "Is_Subscription_Validation": {
               "type": "If",
               "runAfter": {
-                "Validate_Event": [ "Succeeded" ]
+                "Validate_EventType": [ "Succeeded" ]
               },
               "expression": {
                 "equals": [
@@ -163,7 +168,7 @@
                     "actions": {},
                     "else": {
                       "actions": {
-                        "Return_Bad_Request_MissingFields": {
+                        "Return_400_MissingFields": {
                           "type": "Response",
                           "runAfter": {},
                           "inputs": {
@@ -233,7 +238,7 @@
                           "method": "post",
                           "path": "/v2/Mail",
                           "body": {
-                            "To": "mats.johannesson@easec.se;mats.johannesson@iver.se",
+                            "To": "@parameters('emailTo')",
                             "Subject": "Rehydration finished (Hot tier)",
                             "Body": "<p><strong>Rehydration process finished.</strong></p><p><strong>Blob:</strong> @{outputs('NormalizedEvent')?['subject']}</p><p><strong>Previous tier:</strong> @{outputs('NormalizedEvent')?['data']?['previousTier']}</p><p><strong>Current tier:</strong> @{outputs('NormalizedEvent')?['data']?['accessTier']}</p><p><strong>URL:</strong> @{outputs('NormalizedEvent')?['data']?['url']}</p><p>Ready for the next step.</p>",
                             "Importance": "Normal"
@@ -241,13 +246,20 @@
                         }
                       }
                     },
-                    "else": { "actions": {} }
+                    "else": {
+                      "actions": {}
+                    }
                   },
 
                   "Return_OK": {
                     "type": "Response",
                     "runAfter": {
-                      "Is_Hot_Tier_And_Not_Preflight": [ "Succeeded", "Failed", "Skipped", "TimedOut" ]
+                      "Is_Hot_Tier_And_Not_Preflight": [
+                        "Succeeded",
+                        "Failed",
+                        "Skipped",
+                        "TimedOut"
+                      ]
                     },
                     "inputs": {
                       "statusCode": 200,
@@ -257,7 +269,8 @@
                       "body": {
                         "received": true,
                         "eventType": "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
-                        "accessTier": "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')"
+                        "accessTier": "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
+                        "isPreflight": "@bool(coalesce(outputs('NormalizedEvent')?['data']?['isPreflight'], false))"
                       }
                     }
                   }
@@ -270,6 +283,9 @@
         "parameters": {
           "$connections": {
             "value": "[parameters('$connections')]"
+          },
+          "emailTo": {
+            "value": "[parameters('emailTo')]"
           }
         }
       }
@@ -282,3 +298,4 @@
     }
   }
 }
+
