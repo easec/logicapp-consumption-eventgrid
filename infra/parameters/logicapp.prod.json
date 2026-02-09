@@ -4,13 +4,15 @@
   "parameters": {
     "logicAppName": { "value": "la-iscala-archive-prod" },
     "location": { "value": "swedencentral" },
+
     "emailTo": { "value": "mats.johannesson@easec.se" },
+
     "$connections": {
       "value": {
         "office365": {
           "id": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/providers/Microsoft.Web/locations/swedencentral/managedApis/office365",
-          "connectionId": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive-prod/providers/Microsoft.Web/connections/office365produktion",
-          "connectionName": "office365produktion"
+          "connectionId": "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/rg-iscala-archive-prod/providers/Microsoft.Web/connections/office365production",
+          "connectionName": "office365production"
         }
       }
     }
