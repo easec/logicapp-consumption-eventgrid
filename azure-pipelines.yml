@@ -101,19 +101,6 @@ stages:
         deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Logic App (Prod)
-      inputs:
-        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(rgLocation)
-        csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/logicapp.prod.json
-        deploymentMode: Incremental
-
-
-
-    - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Function infra
       inputs:
         azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
