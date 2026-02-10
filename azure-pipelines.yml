@@ -63,12 +63,19 @@ stages:
     steps:
     - checkout: self
 
+
     - bash: |
         set -e
         python3 -m json.tool infra/functionapp.json > /dev/null
         python3 -m json.tool infra/connections.json > /dev/null
-        python3 -m json.tool logicapp/logicapp.${{ parameters.targetEnv }}.json > /dev/null
         python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+
+        # Logic App template
+        python3 -m json.tool logicapp/logicapp.json > /dev/null
+
+        # Logic App parameter files
+        python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
+        python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
       displayName: Validate JSON templates
 
     - task: AzureResourceManagerTemplateDeployment@3
@@ -83,15 +90,28 @@ stages:
         deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Logic App
+      displayName: Deploy Logic App (Dev)
       inputs:
         azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
         deploymentScope: Resource Group
         resourceGroupName: $(resourceGroupName)
         location: $(rgLocation)
-        csmFile: logicapp/logicapp.${{ parameters.targetEnv }}.json
-        csmParametersFile: infra/parameters/logicapp.${{ parameters.targetEnv }}.json
+        csmFile: logicapp/logicapp.json
+        csmParametersFile: infra/parameters/logicapp.dev.json
         deploymentMode: Incremental
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Logic App (Prod)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: logicapp/logicapp.json
+        csmParametersFile: infra/parameters/logicapp.prod.json
+        deploymentMode: Incremental
+
+
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Function infra
