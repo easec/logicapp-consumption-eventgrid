@@ -1,0 +1,369 @@
+trigger:
+- main
+
+stages:
+# =========================
+# DEV
+# =========================
+- stage: Dev
+  displayName: Deploy Dev
+  variables:
+  - group: variable_iScalaArchive
+
+  # fixed pipeline vars (only if not in variable group)
+  - name: azureServiceConnection
+    value: 'Azure-Service-Connection'
+
+  # derived
+  - name: storageAccountResourceId
+    value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
+
+  jobs:
+  - job: Deploy
+    displayName: Deploy Dev
+    pool:
+      name: easec-pool
+    steps:
+    - checkout: self
+
+    - bash: |
+        set -e
+        python3 -m json.tool infra/functionapp.json > /dev/null
+        python3 -m json.tool infra/connections.json > /dev/null
+        python3 -m json.tool logicapp/logicapp.json > /dev/null
+        python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+      displayName: Validate JSON templates
+
+    # Connections
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Connections (Dev)
+      inputs:
+        azureResourceManagerConnection: $(azureServiceConnection)
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/connections.json
+        csmParametersFile: infra/parameters/connections.dev.json
+        deploymentMode: Incremental
+
+    # Logic App (dev)
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Logic App (Dev)
+      inputs:
+        azureResourceManagerConnection: $(azureServiceConnection)
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: logicapp/logicapp.json
+        csmParametersFile: infra/parameters/logicapp.dev.json
+        deploymentMode: Incremental
+
+    # Function infra (dev)
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Function infra (Dev)
+      inputs:
+        azureResourceManagerConnection: $(azureServiceConnection)
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/functionapp.json
+        csmParametersFile: infra/parameters/functionapp.dev.json
+        deploymentMode: Incremental
+        deploymentOutputs: functionOutputs
+
+    - script: |
+        echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+        echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
+      displayName: Set Function outputs (Dev)
+
+    # Fetch callback URL and set Function appsetting
+    - task: AzureCLI@2
+      displayName: Fetch Logic App callback URL -> set Function appsetting (Dev)
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG="$(resourceGroupName)"
+          LA="$(logicAppName)"
+          TRIGGER="$(triggerName)"
+          FUNC="$(functionAppName)"
+          SUB="$(az account show --query id -o tsv)"
+
+          CALLBACK="$(az rest --method POST \
+            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+            --body '{}' --query "value" -o tsv)"
+
+          if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+            echo "ERROR: Could not retrieve callback URL."
+            exit 1
+          fi
+
+          echo "$CALLBACK" | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
+
+          az functionapp config appsettings set -g "$RG" -n "$FUNC" \
+            --settings "LOGICAPP_CALLBACK_URL=$CALLBACK" -o none
+
+          az functionapp restart -g "$RG" -n "$FUNC" -o none
+
+    # Zip + deploy function code (dev)
+    - task: ArchiveFiles@2
+      displayName: Zip Function code (Dev)
+      inputs:
+        rootFolderOrFile: functionapp
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+        replaceExistingArchive: true
+
+    - task: AzureCLI@2
+      displayName: Deploy Function package (Dev) (config-zip)
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az functionapp deployment source config-zip \
+            -g "$(resourceGroupName)" -n "$(functionAppName)" \
+            --src "$(Build.ArtifactStagingDirectory)/functionapp.zip" -o none
+          az functionapp restart -g "$(resourceGroupName)" -n "$(functionAppName)" -o none
+
+    # Preflight (dev) - tagged to avoid email
+    - task: AzureCLI@2
+      displayName: Pre-flight check (Dev)
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          FUNC_URL="$(functionWebhookUrl)"
+          echo "Function endpoint: $FUNC_URL"
+
+          # validation event
+          resp="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" \
+            -d '[{"eventType":"Microsoft.EventGrid.SubscriptionValidationEvent","data":{"validationCode":"abc123"}}]')"
+          echo "$resp" | grep -q "HTTP/1.1 200"
+          echo "$resp" | grep -q '"validationResponse"'
+
+          # hot tier test (preflight)
+          payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight","data":{"accessTier":"Hot","previousTier":"Cool","isPreflight":true,"url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"},"metadataVersion":"1","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}]'
+          resp2="$(curl -sS -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
+          ok="$(printf '%s' "$resp2" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(str(d.get("ok", False)).lower())' 2>/dev/null || echo false)"
+          [ "$ok" = "true" ] || (echo "ERROR: Preflight failed: $resp2" && exit 1)
+
+    # Event Grid subscription (dev)
+    - task: AzureCLI@2
+      displayName: Create/Update Event Grid subscription (Dev)
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az eventgrid event-subscription delete \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" || true
+
+          az eventgrid event-subscription create \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" \
+            --endpoint "$(functionWebhookUrl)" \
+            --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged
+
+    # Workbook (dev)
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Workbook (Dev)
+      inputs:
+        azureResourceManagerConnection: $(azureServiceConnection)
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/workbook-forwarding.json
+        overrideParameters: >
+          -workbookName "$(workbookId)"
+          -location "$(rgLocation)"
+          -appInsightsResourceId "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Insights/components/$(appInsightsName)"
+        deploymentMode: Incremental
+
+
+# =========================
+# PROD (manual approval recommended)
+# =========================
+- stage: Prod
+  displayName: Deploy Prod
+  dependsOn: Dev
+  condition: succeeded()
+
+  variables:
+  - group: variable_iScalaArchive-prod
+
+  - name: azureServiceConnection
+    value: 'Azure-Service-Connection'
+
+  - name: storageAccountResourceId
+    value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
+
+  jobs:
+  - deployment: DeployProd
+    displayName: Deploy Prod (Approval Gate)
+    environment: iscala-prod   # create this Environment in ADO and require approvals
+    strategy:
+      runOnce:
+        deploy:
+          pool:
+            name: easec-pool
+          steps:
+          - checkout: self
+
+          - bash: |
+              set -e
+              python3 -m json.tool infra/functionapp.json > /dev/null
+              python3 -m json.tool infra/connections.json > /dev/null
+              python3 -m json.tool logicapp/logicapp.json > /dev/null
+              python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+            displayName: Validate JSON templates
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Connections (Prod)
+            inputs:
+              azureResourceManagerConnection: $(azureServiceConnection)
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/connections.json
+              csmParametersFile: infra/parameters/connections.prod.json
+              deploymentMode: Incremental
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Logic App (Prod)
+            inputs:
+              azureResourceManagerConnection: $(azureServiceConnection)
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: logicapp/logicapp.json
+              csmParametersFile: infra/parameters/logicapp.prod.json
+              deploymentMode: Incremental
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Function infra (Prod)
+            inputs:
+              azureResourceManagerConnection: $(azureServiceConnection)
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/functionapp.json
+              csmParametersFile: infra/parameters/functionapp.prod.json
+              deploymentMode: Incremental
+              deploymentOutputs: functionOutputs
+
+          - script: |
+              echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+              echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
+            displayName: Set Function outputs (Prod)
+
+          - task: AzureCLI@2
+            displayName: Fetch Logic App callback URL -> set Function appsetting (Prod)
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                RG="$(resourceGroupName)"
+                LA="$(logicAppName)"
+                TRIGGER="$(triggerName)"
+                FUNC="$(functionAppName)"
+                SUB="$(az account show --query id -o tsv)"
+
+                CALLBACK="$(az rest --method POST \
+                  --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+                  --body '{}' --query "value" -o tsv)"
+
+                if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+                  echo "ERROR: Could not retrieve callback URL."
+                  exit 1
+                fi
+
+                az functionapp config appsettings set -g "$RG" -n "$FUNC" \
+                  --settings "LOGICAPP_CALLBACK_URL=$CALLBACK" -o none
+
+                az functionapp restart -g "$RG" -n "$FUNC" -o none
+
+          - task: ArchiveFiles@2
+            displayName: Zip Function code (Prod)
+            inputs:
+              rootFolderOrFile: functionapp
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+              replaceExistingArchive: true
+
+          - task: AzureCLI@2
+            displayName: Deploy Function package (Prod) (config-zip)
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az functionapp deployment source config-zip \
+                  -g "$(resourceGroupName)" -n "$(functionAppName)" \
+                  --src "$(Build.ArtifactStagingDirectory)/functionapp.zip" -o none
+                az functionapp restart -g "$(resourceGroupName)" -n "$(functionAppName)" -o none
+
+          - task: AzureCLI@2
+            displayName: Pre-flight check (Prod)
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                FUNC_URL="$(functionWebhookUrl)"
+
+                resp="$(curl -sS -i -X POST "$FUNC_URL" -H "Content-Type: application/json" \
+                  -d '[{"eventType":"Microsoft.EventGrid.SubscriptionValidationEvent","data":{"validationCode":"abc123"}}]')"
+                echo "$resp" | grep -q "HTTP/1.1 200"
+                echo "$resp" | grep -q '"validationResponse"'
+
+                payload='[{"topic":"'"$(storageAccountResourceId)"'","subject":"/blobServices/default/containers/snapshot/blobs/devops-preflight.txt","eventType":"Microsoft.Storage.BlobTierChanged","id":"preflight","data":{"accessTier":"Hot","previousTier":"Cool","isPreflight":true,"url":"https://'"$(storageAccount)"'.blob.core.windows.net/snapshot/devops-preflight.txt"},"metadataVersion":"1","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}]'
+                resp2="$(curl -sS -X POST "$FUNC_URL" -H "Content-Type: application/json" -d "$payload")"
+                ok="$(printf '%s' "$resp2" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(str(d.get("ok", False)).lower())' 2>/dev/null || echo false)"
+                [ "$ok" = "true" ] || (echo "ERROR: Preflight failed: $resp2" && exit 1)
+
+          - task: AzureCLI@2
+            displayName: Create/Update Event Grid subscription (Prod)
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az eventgrid event-subscription delete \
+                  --name "$(eventSubscriptionName)" \
+                  --source-resource-id "$(storageAccountResourceId)" || true
+
+                az eventgrid event-subscription create \
+                  --name "$(eventSubscriptionName)" \
+                  --source-resource-id "$(storageAccountResourceId)" \
+                  --endpoint "$(functionWebhookUrl)" \
+                  --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Workbook (Prod)
+            inputs:
+              azureResourceManagerConnection: $(azureServiceConnection)
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/workbook-forwarding.json
+              overrideParameters: >
+                -workbookName "$(workbookId)"
+                -location "$(rgLocation)"
+                -appInsightsResourceId "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Insights/components/$(appInsightsName)"
+              deploymentMode: Incremental
