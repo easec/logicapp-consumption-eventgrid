@@ -1,0 +1,159 @@
+parameters:
+- name: targetEnv
+  type: string
+
+steps:
+- checkout: self
+
+- bash: |
+    set -e
+    python3 -m json.tool infra/functionapp.json > /dev/null
+    python3 -m json.tool infra/connections.json > /dev/null
+    python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+    python3 -m json.tool logicapp/logicapp.json > /dev/null
+    python3 -m json.tool infra/parameters/logicapp.${{ parameters.targetEnv }}.json > /dev/null
+    python3 -m json.tool infra/parameters/connections.${{ parameters.targetEnv }}.json > /dev/null
+    python3 -m json.tool infra/parameters/functionapp.${{ parameters.targetEnv }}.json > /dev/null
+  displayName: Validate JSON templates
+
+stages:
+- stage: Deploy
+  displayName: Deploy ${{ parameters.targetEnv }}
+  jobs:
+  - job: Deploy
+    pool:
+      name: easec-pool
+    steps:
+    - checkout: self
+
+
+    - bash: |
+        set -e
+        python3 -m json.tool infra/functionapp.json > /dev/null
+        python3 -m json.tool infra/connections.json > /dev/null
+        python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+
+        # Logic App template
+        python3 -m json.tool logicapp/logicapp.json > /dev/null
+
+        # Logic App parameter files
+        python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
+        python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
+      displayName: Validate JSON templates
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Connections
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/connections.json
+        csmParametersFile: infra/parameters/connections.${{ parameters.targetEnv }}.json
+        deploymentMode: Incremental
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Logic App (Dev)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: logicapp/logicapp.json
+        csmParametersFile: infra/parameters/logicapp.dev.json
+        deploymentMode: Incremental
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Function infra
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/functionapp.json
+        csmParametersFile: infra/parameters/functionapp.${{ parameters.targetEnv }}.json
+        deploymentMode: Incremental
+        deploymentOutputs: functionOutputs
+
+    - script: |
+        echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+        echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
+      displayName: Set outputs variables
+
+    - task: AzureCLI@2
+      displayName: Fetch Logic App callback URL -> set Function appsetting
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG="$(resourceGroupName)"
+          LA="$(logicAppName)"
+          TRIGGER="$(triggerName)"
+          FUNC="$(functionAppName)"
+          SUB="$(az account show --query id -o tsv)"
+
+          CALLBACK="$(az rest --method POST \
+            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+            --body '{}' --query "value" -o tsv)"
+
+          if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+            echo "ERROR: Could not retrieve callback URL."
+            exit 1
+          fi
+
+          az functionapp config appsettings set \
+            -g "$RG" -n "$FUNC" \
+            --settings "LOGICAPP_CALLBACK_URL=$CALLBACK" -o none
+
+          az functionapp restart -g "$RG" -n "$FUNC" -o none
+
+          echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK"
+
+    - task: ArchiveFiles@2
+      displayName: Zip Function code
+      inputs:
+        rootFolderOrFile: functionapp
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+        replaceExistingArchive: true
+
+    - task: AzureCLI@2
+      displayName: Deploy Function package (config-zip)
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az functionapp deployment source config-zip \
+            -g "$(resourceGroupName)" -n "$(functionAppName)" \
+            --src "$(Build.ArtifactStagingDirectory)/functionapp.zip" -o none
+          az functionapp restart -g "$(resourceGroupName)" -n "$(functionAppName)" -o none
+
+    - task: AzureCLI@2
+      displayName: Create Event Grid subscription (to Function)
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          az eventgrid event-subscription delete \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" || true
+
+          az eventgrid event-subscription create \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" \
+            --endpoint "$(functionWebhookUrl)" \
+            --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged
+
+          az eventgrid event-subscription show \
+            --name "$(eventSubscriptionName)" \
+            --source-resource-id "$(storageAccountResourceId)" \
+            --query "{state:provisioningState, endpoint:destination.endpointBaseUrl}" -o json
