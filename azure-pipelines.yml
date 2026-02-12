@@ -90,14 +90,14 @@ stages:
         deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Logic App (Dev)
+      displayName: Deploy Logic App (${{ parameters.targetEnv }})
       inputs:
         azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
         deploymentScope: Resource Group
         resourceGroupName: $(resourceGroupName)
         location: $(rgLocation)
         csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/logicapp.dev.json
+        csmParametersFile: infra/parameters/logicapp.${{ parameters.targetEnv }}.json
         deploymentMode: Incremental
 
     - task: AzureResourceManagerTemplateDeployment@3
