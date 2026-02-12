@@ -5,16 +5,10 @@
     "location": { "type": "string" },
 
     "office365ConnectionName": { "type": "string" },
-    "office365DisplayName": {
-      "type": "string",
-      "defaultValue": "office365"
-    },
+    "office365DisplayName": { "type": "string" },
 
     "eventGridConnectionName": { "type": "string" },
-    "eventGridDisplayName": {
-      "type": "string",
-      "defaultValue": "azureeventgrid"
-    }
+    "eventGridDisplayName": { "type": "string" }
   },
   "resources": [
     {
