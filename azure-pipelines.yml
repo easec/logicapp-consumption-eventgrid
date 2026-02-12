@@ -11,7 +11,7 @@ parameters:
 
 - name: azureServiceConnection
   type: string
-  default: Azure-Service-Connection
+  default: Azure-Service-Connection-Sub
 
 variables:
 # DEV
