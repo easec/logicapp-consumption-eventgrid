@@ -31,6 +31,8 @@ variables:
     value: iscala-archive-egsub
   - name: rgLocation
     value: swedencentral
+  - name: deadLetterStorageAccountName
+    value: snapshottestsa
 
 # PROD
 - ${{ if eq(parameters.targetEnv, 'prod') }}:
@@ -49,6 +51,10 @@ variables:
     value: iscala-archive-egsub-prod
   - name: rgLocation
     value: swedencentral
+  - name: deadLetterStorageAccountName
+    value: stiscalasnapshotprod
+
+
 
 - name: storageAccountResourceId
   value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
@@ -171,26 +177,33 @@ stages:
             --src "$(Build.ArtifactStagingDirectory)/functionapp.zip" -o none
           az functionapp restart -g "$(resourceGroupName)" -n "$(functionAppName)" -o none
 
-    - task: AzureCLI@2
-      displayName: Create Event Grid subscription (to Function)
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Dead-letter storage
       inputs:
-        azureSubscription: ${{ parameters.azureServiceConnection }}
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/deadletter.json
+        overrideParameters: >
+          -location "$(rgLocation)"
+          -deadLetterStorageAccountName "$(deadLetterStorageAccountName)"
+          -deadLetterContainerName "eventgrid-deadletter"
+        deploymentMode: Incremental
+        deploymentOutputs: deadletterOutputs
 
-          az eventgrid event-subscription delete \
-            --name "$(eventSubscriptionName)" \
-            --source-resource-id "$(storageAccountResourceId)" || true
-
-          az eventgrid event-subscription create \
-            --name "$(eventSubscriptionName)" \
-            --source-resource-id "$(storageAccountResourceId)" \
-            --endpoint "$(functionWebhookUrl)" \
-            --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobTierChanged
-
-          az eventgrid event-subscription show \
-            --name "$(eventSubscriptionName)" \
-            --source-resource-id "$(storageAccountResourceId)" \
-            --query "{state:provisioningState, endpoint:destination.endpointBaseUrl}" -o json
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Event Grid subscription (with dead-letter)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/eventgrid-subscription.json
+        overrideParameters: >
+          -eventSubscriptionName "$(eventSubscriptionName)"
+          -sourceResourceId "$(storageAccountResourceId)"
+          -endpointUrl "$(functionWebhookUrl)"
+          -deadLetterStorageAccountId "$(deadletterOutputs.deadLetterStorageAccountId.value)"
+          -deadLetterContainerName "$(deadletterOutputs.deadLetterContainerName.value)"
+        deploymentMode: Incremental
