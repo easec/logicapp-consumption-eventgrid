@@ -56,8 +56,11 @@ variables:
 
 
 
+
 - name: storageAccountResourceId
-  value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
+ # value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
+  value: "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
+
 
 stages:
 - stage: Deploy
@@ -83,6 +86,17 @@ stages:
         python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
         python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
       displayName: Validate JSON templates
+
+    - task: AzureCLI@2
+      displayName: Set subscriptionId variable
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
+
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Connections
@@ -177,6 +191,7 @@ stages:
             --src "$(Build.ArtifactStagingDirectory)/functionapp.zip" -o none
           az functionapp restart -g "$(resourceGroupName)" -n "$(functionAppName)" -o none
 
+
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Ensure dead-letter container exists
       inputs:
@@ -186,25 +201,9 @@ stages:
         location: $(rgLocation)
         csmFile: infra/deadletter-container.json
         overrideParameters: >
-          -storageAccountName "$(storageAccount)"
+          -storageAccountName "$(deadLetterStorageAccountName)"
           -containerName "eventgrid-deadletter"
         deploymentMode: Incremental
-
-
-    - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Dead-letter storage
-      inputs:
-        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(rgLocation)
-        csmFile: infra/deadletter.json
-        overrideParameters: >
-          -location "$(rgLocation)"
-          -deadLetterStorageAccountName "$(deadLetterStorageAccountName)"
-          -deadLetterContainerName "eventgrid-deadletter"
-        deploymentMode: Incremental
-        deploymentOutputs: deadletterOutputs
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Event Grid subscription (dead-letter enabled)
@@ -218,6 +217,6 @@ stages:
           -eventSubscriptionName "$(eventSubscriptionName)"
           -sourceResourceId "$(storageAccountResourceId)"
           -endpointUrl "$(functionWebhookUrl)"
-          -deadLetterStorageAccountId "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
+          -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
           -deadLetterContainerName "eventgrid-deadletter"
         deploymentMode: Incremental
