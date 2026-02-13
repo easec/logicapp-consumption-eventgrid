@@ -3,20 +3,23 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "eventSubscriptionName": { "type": "string" },
-    "storageAccountResourceId": { "type": "string" },
-    "logicAppCallbackUrl": { "type": "string" }
+    "sourceResourceId": { "type": "string" },
+    "endpointUrl": { "type": "string" },
+
+    "deadLetterStorageAccountId": { "type": "string" },
+    "deadLetterContainerName": { "type": "string" }
   },
   "resources": [
     {
       "type": "Microsoft.EventGrid/eventSubscriptions",
       "apiVersion": "2022-06-15",
       "name": "[parameters('eventSubscriptionName')]",
-      "scope": "[parameters('storageAccountResourceId')]",
+      "scope": "[parameters('sourceResourceId')]",
       "properties": {
         "destination": {
           "endpointType": "WebHook",
           "properties": {
-            "endpointUrl": "[parameters('logicAppCallbackUrl')]"
+            "endpointUrl": "[parameters('endpointUrl')]"
           }
         },
         "filter": {
@@ -26,8 +29,15 @@
           ]
         },
         "retryPolicy": {
-          "maxDeliveryAttempts": 5,
+          "maxDeliveryAttempts": 30,
           "eventTimeToLiveInMinutes": 1440
+        },
+        "deadLetterDestination": {
+          "endpointType": "StorageBlob",
+          "properties": {
+            "resourceId": "[parameters('deadLetterStorageAccountId')]",
+            "blobContainerName": "[parameters('deadLetterContainerName')]"
+          }
         }
       }
     }
