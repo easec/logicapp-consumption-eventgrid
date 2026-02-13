@@ -179,17 +179,63 @@ stages:
         replaceExistingArchive: true
 
     - task: AzureCLI@2
-      displayName: Deploy Function package (config-zip)
+      displayName: Deploy Function package (config-zip) with warmup + retry
       inputs:
         azureSubscription: ${{ parameters.azureServiceConnection }}
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           set -euo pipefail
-          az functionapp deployment source config-zip \
-            -g "$(resourceGroupName)" -n "$(functionAppName)" \
-            --src "$(Build.ArtifactStagingDirectory)/functionapp.zip" -o none
-          az functionapp restart -g "$(resourceGroupName)" -n "$(functionAppName)" -o none
+
+          RG="$(resourceGroupName)"
+          FUNC="$(functionAppName)"
+          ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
+
+          echo "Warming up SCM site (helps first-deploy stability)..."
+          # ignore failures; just nudges the site awake
+          curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+
+          echo "Deploying ZIP with retries..."
+          max=6
+          delay=5
+
+          for i in $(seq 1 $max); do
+            echo "Attempt $i/$max: az functionapp deployment source config-zip"
+            set +e
+            az functionapp deployment source config-zip \
+              -g "$RG" -n "$FUNC" \
+              --src "$ZIP" -o none
+            rc=$?
+            set -e
+
+            if [ $rc -eq 0 ]; then
+              echo "ZIP deploy accepted."
+              break
+            fi
+
+            if [ $i -eq $max ]; then
+              echo "ERROR: ZIP deploy failed after $max attempts."
+              exit 1
+            fi
+
+            echo "Deploy failed (rc=$rc). Sleeping ${delay}s then retrying..."
+            sleep "$delay"
+            delay=$((delay * 2))
+          done
+
+          echo "Restarting Function App..."
+          az functionapp restart -g "$RG" -n "$FUNC" -o none
+
+          echo "Waiting for Function host to respond..."
+          # Wait for the app endpoint to respond (not perfect, but helps)
+          for j in $(seq 1 30); do
+            code="$(curl -sS -o /dev/null -w "%{http_code}" "https://${FUNC}.azurewebsites.net")" || code="000"
+            if [ "$code" != "000" ]; then
+              echo "Host responding (HTTP $code)."
+              break
+            fi
+            sleep 2
+          done
 
 
     - task: AzureResourceManagerTemplateDeployment@3
