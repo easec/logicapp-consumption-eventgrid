@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "eventSubscriptionName": { "type": "string" },
+    "sourceResourceId": { "type": "string" },
+    "endpointUrl": { "type": "string" },
+
+    "deadLetterStorageAccountId": { "type": "string" },
+    "deadLetterContainerName": { "type": "string" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.EventGrid/eventSubscriptions",
+      "apiVersion": "2022-06-15",
+      "name": "[parameters('eventSubscriptionName')]",
+      "scope": "[parameters('sourceResourceId')]",
+      "properties": {
+        "destination": {
+          "endpointType": "WebHook",
+          "properties": {
+            "endpointUrl": "[parameters('endpointUrl')]"
+          }
+        },
+        "filter": {
+          "includedEventTypes": [
+            "Microsoft.Storage.BlobCreated",
+            "Microsoft.Storage.BlobTierChanged"
+          ]
+        },
+        "retryPolicy": {
+          "maxDeliveryAttempts": 30,
+          "eventTimeToLiveInMinutes": 1440
+        },
+        "deadLetterDestination": {
+          "endpointType": "StorageBlob",
+          "properties": {
+            "resourceId": "[parameters('deadLetterStorageAccountId')]",
+            "blobContainerName": "[parameters('deadLetterContainerName')]"
+          }
+        }
+      }
+    }
+  ]
+}
