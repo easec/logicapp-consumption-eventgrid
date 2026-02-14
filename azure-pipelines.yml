@@ -179,7 +179,7 @@ stages:
         replaceExistingArchive: true
 
     - task: AzureCLI@2
-      displayName: Deploy Function package (config-zip) with warmup + retry
+      displayName: Deploy Function package (first-deploy retry only)
       inputs:
         azureSubscription: ${{ parameters.azureServiceConnection }}
         scriptType: bash
@@ -190,53 +190,50 @@ stages:
           RG="$(resourceGroupName)"
           FUNC="$(functionAppName)"
           ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
+          MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
 
-          echo "Warming up SCM site (helps first-deploy stability)..."
-          # ignore failures; just nudges the site awake
-          curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+          echo "Checking first-deploy marker: $MARKER_NAME"
+          MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+            --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
 
-          echo "Deploying ZIP with retries..."
-          max=6
-          delay=5
+          if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
+            echo "First deployment detected -> enabling warmup + retries"
 
-          for i in $(seq 1 $max); do
-            echo "Attempt $i/$max: az functionapp deployment source config-zip"
-            set +e
-            az functionapp deployment source config-zip \
-              -g "$RG" -n "$FUNC" \
-              --src "$ZIP" -o none
-            rc=$?
-            set -e
+            # Warm up SCM (harmless)
+            curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
 
-            if [ $rc -eq 0 ]; then
-              echo "ZIP deploy accepted."
-              break
-            fi
+            max=3
+            delay=5
+            for i in $(seq 1 $max); do
+              echo "ZIP deploy attempt $i/$max..."
+              if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
+                echo "ZIP deploy accepted."
+                break
+              fi
 
-            if [ $i -eq $max ]; then
-              echo "ERROR: ZIP deploy failed after $max attempts."
-              exit 1
-            fi
+              if [ $i -eq $max ]; then
+                echo "ERROR: ZIP deploy failed after $max attempts."
+                echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
+                exit 1
+              fi
 
-            echo "Deploy failed (rc=$rc). Sleeping ${delay}s then retrying..."
-            sleep "$delay"
-            delay=$((delay * 2))
-          done
+              echo "Retrying in ${delay}s..."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
 
-          echo "Restarting Function App..."
-          az functionapp restart -g "$RG" -n "$FUNC" -o none
+            echo "Restarting Function App..."
+            az functionapp restart -g "$RG" -n "$FUNC" -o none
 
-          echo "Waiting for Function host to respond..."
-          # Wait for the app endpoint to respond (not perfect, but helps)
-          for j in $(seq 1 30); do
-            code="$(curl -sS -o /dev/null -w "%{http_code}" "https://${FUNC}.azurewebsites.net")" || code="000"
-            if [ "$code" != "000" ]; then
-              echo "Host responding (HTTP $code)."
-              break
-            fi
-            sleep 2
-          done
+            echo "Setting marker so retries only happen once..."
+            az functionapp config appsettings set -g "$RG" -n "$FUNC" \
+              --settings "$MARKER_NAME=true" -o none
 
+          else
+            echo "Not first deployment (marker=$MARKER_VAL) -> single deploy"
+            az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
+            az functionapp restart -g "$RG" -n "$FUNC" -o none
+          fi
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Ensure dead-letter container exists
