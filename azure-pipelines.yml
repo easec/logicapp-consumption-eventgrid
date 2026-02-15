@@ -58,7 +58,6 @@ variables:
 
 
 - name: storageAccountResourceId
- # value: "/subscriptions/0ac447d7-fbc3-4d3d-84d4-37bb9a71e089/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
   value: "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
 
 
