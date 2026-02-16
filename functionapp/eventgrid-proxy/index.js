@@ -14,6 +14,11 @@ function isRetryableStatus(status) {
   return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
+// ✅ Only fallback for transient statuses (or network errors)
+function shouldFallbackFromNext(status) {
+  return isRetryableStatus(status);
+}
+
 function postJsonOnce(targetUrl, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(targetUrl);
@@ -104,22 +109,19 @@ async function postJsonWithRetry(context, targetUrl, body) {
  * Strategy A:
  * - Prefer NEXT if set (canary)
  * - Otherwise use ACTIVE
- * - Optional: fallback from NEXT → ACTIVE if NEXT fails with retryable errors
+ * - Fallback from NEXT → ACTIVE only for transient errors (or network errors)
  */
 function selectCallbackUrls() {
   const next = process.env.LOGICAPP_CALLBACK_URL_NEXT || "";
   const active = process.env.LOGICAPP_CALLBACK_URL_ACTIVE || "";
 
-  // Candidate order: NEXT first (if present), then ACTIVE
   const urls = [];
   if (next && next !== "null") urls.push({ label: "NEXT", url: next });
   if (active && active !== "null") urls.push({ label: "ACTIVE", url: active });
-
   return urls;
 }
 
 module.exports = async function (context, req) {
-  // Azure Functions parses JSON body
   const body = req.body;
 
   if (!body) {
@@ -132,7 +134,7 @@ module.exports = async function (context, req) {
 
   const first = Array.isArray(body) ? body[0] : body;
 
-  // Event Grid subscription validation handshake
+  // Subscription validation
   if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
     const code = first?.data?.validationCode || "";
     context.log(`Handling SubscriptionValidationEvent. code=${code}`);
@@ -147,7 +149,9 @@ module.exports = async function (context, req) {
   const candidates = selectCallbackUrls();
 
   if (candidates.length === 0) {
-    context.log("No callback URL configured. Need LOGICAPP_CALLBACK_URL_ACTIVE (and optional _NEXT).");
+    context.log(
+      "No callback URL configured. Need LOGICAPP_CALLBACK_URL_ACTIVE (and optional _NEXT)."
+    );
     context.res = {
       status: 500,
       headers: { "Content-Type": "application/json" },
@@ -156,14 +160,16 @@ module.exports = async function (context, req) {
     return;
   }
 
-  // Log redacted config
   context.log(
     "Callback candidates:",
     candidates.map((c) => `${c.label}=${redactSig(c.url)}`).join(" | ")
   );
 
-  // Controls whether we ever fallback from NEXT → ACTIVE on non-2xx
-  const allowFallback = String(process.env.FORWARD_ALLOW_FALLBACK || "true").toLowerCase() === "true";
+  const allowFallback =
+    String(process.env.FORWARD_ALLOW_FALLBACK || "true").toLowerCase() === "true";
+
+  const includeBody =
+    String(process.env.RETURN_FORWARDED_BODY || "false").toLowerCase() === "true";
 
   let lastResp = null;
   let chosen = null;
@@ -179,15 +185,17 @@ module.exports = async function (context, req) {
 
       const success = resp.status >= 200 && resp.status < 300;
 
-      context.log(`Forwarded to Logic App (${label}). Status: ${resp.status}. Attempts: ${resp.attempts}`);
+      context.log(
+        `Forwarded to Logic App (${label}). Status: ${resp.status}. Attempts: ${resp.attempts}`
+      );
 
-      // Optionally include forwarded body for debugging (guarded)
-      const includeBody = String(process.env.RETURN_FORWARDED_BODY || "false").toLowerCase() === "true";
       const forwardedBody = includeBody
-        ? (resp.body && resp.body.length > 4000 ? resp.body.slice(0, 4000) + "...(truncated)" : (resp.body || ""))
+        ? resp.body && resp.body.length > 4000
+          ? resp.body.slice(0, 4000) + "...(truncated)"
+          : resp.body || ""
         : undefined;
 
-      // If success OR if fallback is disabled OR this was ACTIVE already, return result
+      // ✅ If success OR fallback disabled OR ACTIVE already -> return
       if (success || !allowFallback || label === "ACTIVE") {
         context.res = {
           status: 200,
@@ -203,13 +211,33 @@ module.exports = async function (context, req) {
         return;
       }
 
-      // Non-2xx from NEXT: allow fallback to ACTIVE (next candidate)
-      context.log(`Non-2xx from ${label}. Will try fallback if available. Status=${resp.status}`);
+      // ✅ Non-2xx from NEXT: fallback ONLY if transient
+      if (label === "NEXT" && shouldFallbackFromNext(resp.status)) {
+        context.log(
+          `Transient non-2xx from NEXT (${resp.status}). Trying ACTIVE if configured...`
+        );
+        continue;
+      }
 
+      // ❌ Non-transient non-2xx from NEXT: fail fast (don’t mask bad config)
+      context.res = {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: {
+          ok: false,
+          forwardedStatus: resp.status,
+          attempts: resp.attempts,
+          usedCallback: label,
+          error: `Non-retryable response from ${label}`,
+          ...(includeBody ? { forwardedBody } : {})
+        }
+      };
+      return;
     } catch (err) {
       errorDetails = String(err && err.stack ? err.stack : err);
       context.log(`Error forwarding to Logic App (${label}): ${errorDetails}`);
 
+      // ✅ Network error: fallback is okay (if allowed + ACTIVE exists)
       if (!allowFallback || label === "ACTIVE") {
         context.res = {
           status: 200,
@@ -225,24 +253,23 @@ module.exports = async function (context, req) {
         };
         return;
       }
-      // Else try next candidate (ACTIVE)
+
+      // else: try next candidate (ACTIVE)
     }
   }
 
-  // If we get here, NEXT failed and ACTIVE either missing or also failed without returning
   context.res = {
     status: 200,
     headers: { "Content-Type": "application/json" },
     body: {
       ok: false,
       forwardedStatus: lastResp ? lastResp.status : 0,
-      attempts: lastResp ? lastResp.attempts : parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
+      attempts: lastResp
+        ? lastResp.attempts
+        : parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
       usedCallback: chosen || "NONE",
       error: "Forwarding failed (all candidates exhausted)",
       details: errorDetails
     }
   };
 };
-
-
-
