@@ -11,12 +11,14 @@ function redactSig(url) {
 }
 
 function isRetryableStatus(status) {
+  // Retry on transient/server errors + throttling/timeouts
+  // Avoid retrying most 4xx (usually permanent)
   return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
-// ✅ Only fallback for transient statuses (or network errors)
-function shouldFallbackFromNext(status) {
-  return isRetryableStatus(status);
+function trimText(s, max = 2000) {
+  if (!s) return "";
+  return s.length > max ? s.slice(0, max) + "...(truncated)" : s;
 }
 
 function postJsonOnce(targetUrl, body) {
@@ -53,31 +55,47 @@ function postJsonOnce(targetUrl, body) {
 
 /**
  * Retry policy:
- * - Attempts: env FORWARD_MAX_ATTEMPTS (default 4)
+ * - Attempts: default 4 total (1 + 3 retries)
  * - Backoff: exponential + jitter
  * - Retry on: 408, 429, 5xx, and network errors
+ *
+ * Env:
+ *   FORWARD_MAX_ATTEMPTS (default 4)
+ *   FORWARD_BASE_DELAY_MS (default 500)
+ *   FORWARD_MAX_DELAY_MS (default 8000)
  */
 async function postJsonWithRetry(context, targetUrl, body) {
   const maxAttempts = parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10);
   const baseDelayMs = parseInt(process.env.FORWARD_BASE_DELAY_MS || "500", 10);
   const maxDelayMs = parseInt(process.env.FORWARD_MAX_DELAY_MS || "8000", 10);
 
-  let last = { status: 0, body: "" };
+  let lastResp = { status: 0, body: "" };
   let lastErr = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const resp = await postJsonOnce(targetUrl, body);
-      last = resp;
+      lastResp = resp;
 
-      if (resp.status >= 200 && resp.status < 300) {
+      const success = resp.status >= 200 && resp.status < 300;
+      if (success) {
         return { ...resp, attempts: attempt };
       }
 
+      // Log non-2xx body (trimmed) for troubleshooting
+      context.log(
+        `Non-2xx from Logic App. Attempt ${attempt}. Status=${resp.status}. Body=${trimText(
+          resp.body,
+          500
+        )}`
+      );
+
+      // Stop if not retryable or we're out of attempts
       if (!isRetryableStatus(resp.status) || attempt === maxAttempts) {
         return { ...resp, attempts: attempt };
       }
 
+      // Exponential backoff with jitter
       const exp = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt - 1));
       const jitter = Math.floor(Math.random() * Math.min(250, exp));
       const delay = Math.min(maxDelayMs, exp + jitter);
@@ -96,37 +114,42 @@ async function postJsonWithRetry(context, targetUrl, body) {
       const delay = Math.min(maxDelayMs, exp + jitter);
 
       context.log(
-        `Forward attempt ${attempt} failed (network). Retrying in ${delay}ms...`
+        `Forward attempt ${attempt} failed (network): ${String(
+          err && err.message ? err.message : err
+        )}. Retrying in ${delay}ms...`
       );
       await sleep(delay);
     }
   }
 
-  throw lastErr || new Error(`Forwarding failed after ${maxAttempts} attempts`);
-}
-
-/**
- * Strategy A:
- * - Prefer NEXT if set (canary)
- * - Otherwise use ACTIVE
- * - Fallback from NEXT → ACTIVE only for transient errors (or network errors)
- */
-function selectCallbackUrls() {
-  const next = process.env.LOGICAPP_CALLBACK_URL_NEXT || "";
-  const active = process.env.LOGICAPP_CALLBACK_URL_ACTIVE || "";
-
-  const urls = [];
-  if (next && next !== "null") urls.push({ label: "NEXT", url: next });
-  if (active && active !== "null") urls.push({ label: "ACTIVE", url: active });
-  return urls;
+  // Exhausted due to network errors
+  const maxAttemptsUsed = parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10);
+  const e =
+    lastErr ||
+    new Error(`Forwarding failed after ${maxAttemptsUsed} attempts (network).`);
+  // Attach last response for callers if needed
+  e.lastResponse = lastResp;
+  throw e;
 }
 
 module.exports = async function (context, req) {
+  const logicAppUrl = process.env.LOGICAPP_CALLBACK_URL;
+
+  if (!logicAppUrl) {
+    context.log("LOGICAPP_CALLBACK_URL is NOT set");
+  } else {
+    context.log(`Calling Logic App URL: ${redactSig(logicAppUrl)}`);
+  }
+
   const body = req.body;
 
   if (!body) {
     context.log("Request received with empty body");
-    context.res = { status: 400, body: { error: "Empty body" } };
+    context.res = {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+      body: { error: "Empty body" }
+    };
     return;
   }
 
@@ -134,7 +157,7 @@ module.exports = async function (context, req) {
 
   const first = Array.isArray(body) ? body[0] : body;
 
-  // Subscription validation
+  // Event Grid subscription validation handshake
   if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
     const code = first?.data?.validationCode || "";
     context.log(`Handling SubscriptionValidationEvent. code=${code}`);
@@ -146,130 +169,60 @@ module.exports = async function (context, req) {
     return;
   }
 
-  const candidates = selectCallbackUrls();
-
-  if (candidates.length === 0) {
-    context.log(
-      "No callback URL configured. Need LOGICAPP_CALLBACK_URL_ACTIVE (and optional _NEXT)."
-    );
+  if (!logicAppUrl) {
     context.res = {
       status: 500,
       headers: { "Content-Type": "application/json" },
-      body: { error: "No Logic App callback URL configured" }
+      body: { error: "LOGICAPP_CALLBACK_URL not configured" }
     };
     return;
   }
 
-  context.log(
-    "Callback candidates:",
-    candidates.map((c) => `${c.label}=${redactSig(c.url)}`).join(" | ")
-  );
+  try {
+    const resp = await postJsonWithRetry(context, logicAppUrl, body);
 
-  const allowFallback =
-    String(process.env.FORWARD_ALLOW_FALLBACK || "true").toLowerCase() === "true";
+    const success = resp.status >= 200 && resp.status < 300;
 
-  const includeBody =
-    String(process.env.RETURN_FORWARDED_BODY || "false").toLowerCase() === "true";
+    context.log(
+      `Forwarded to Logic App. Status: ${resp.status}. Attempts: ${resp.attempts}`
+    );
 
-  let lastResp = null;
-  let chosen = null;
-  let errorDetails = "";
-
-  for (let i = 0; i < candidates.length; i++) {
-    const { label, url } = candidates[i];
-    chosen = label;
-
-    try {
-      const resp = await postJsonWithRetry(context, url, body);
-      lastResp = resp;
-
-      const success = resp.status >= 200 && resp.status < 300;
-
-      context.log(
-        `Forwarded to Logic App (${label}). Status: ${resp.status}. Attempts: ${resp.attempts}`
-      );
-
-      const forwardedBody = includeBody
-        ? resp.body && resp.body.length > 4000
-          ? resp.body.slice(0, 4000) + "...(truncated)"
-          : resp.body || ""
-        : undefined;
-
-      // ✅ If success OR fallback disabled OR ACTIVE already -> return
-      if (success || !allowFallback || label === "ACTIVE") {
-        context.res = {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-          body: {
-            ok: success,
-            forwardedStatus: resp.status,
-            attempts: resp.attempts,
-            usedCallback: label,
-            ...(includeBody ? { forwardedBody } : {})
-          }
-        };
-        return;
-      }
-
-      // ✅ Non-2xx from NEXT: fallback ONLY if transient
-      if (label === "NEXT" && shouldFallbackFromNext(resp.status)) {
-        context.log(
-          `Transient non-2xx from NEXT (${resp.status}). Trying ACTIVE if configured...`
-        );
-        continue;
-      }
-
-      // ❌ Non-transient non-2xx from NEXT: fail fast (don’t mask bad config)
-      context.res = {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-        body: {
-          ok: false,
-          forwardedStatus: resp.status,
-          attempts: resp.attempts,
-          usedCallback: label,
-          error: `Non-retryable response from ${label}`,
-          ...(includeBody ? { forwardedBody } : {})
-        }
-      };
-      return;
-    } catch (err) {
-      errorDetails = String(err && err.stack ? err.stack : err);
-      context.log(`Error forwarding to Logic App (${label}): ${errorDetails}`);
-
-      // ✅ Network error: fallback is okay (if allowed + ACTIVE exists)
-      if (!allowFallback || label === "ACTIVE") {
-        context.res = {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-          body: {
-            ok: false,
-            forwardedStatus: 0,
-            attempts: parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
-            usedCallback: label,
-            error: "Forwarding failed after retries",
-            details: errorDetails
-          }
-        };
-        return;
-      }
-
-      // else: try next candidate (ACTIVE)
+    if (resp.body) {
+      context.log(`Logic App response body: ${trimText(resp.body, 2000)}`);
     }
+
+    // Return 200 to Event Grid (avoid duplicate floods; we do our own retries)
+    context.res = {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: {
+        ok: success,
+        forwardedStatus: resp.status,
+        attempts: resp.attempts,
+        forwardedBody: trimText(resp.body, 500) // useful in pipeline output
+      }
+    };
+  } catch (err) {
+    const attempts = parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10);
+    const lastResp = err && err.lastResponse ? err.lastResponse : null;
+
+    context.log(
+      `Error forwarding to Logic App after retries: ${String(
+        err && err.stack ? err.stack : err
+      )}`
+    );
+
+    context.res = {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: {
+        ok: false,
+        forwardedStatus: lastResp ? lastResp.status : 0,
+        attempts,
+        error: "Forwarding failed after retries",
+        details: String(err && err.message ? err.message : err),
+        forwardedBody: lastResp ? trimText(lastResp.body, 500) : ""
+      }
+    };
   }
-
-  context.res = {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-    body: {
-      ok: false,
-      forwardedStatus: lastResp ? lastResp.status : 0,
-      attempts: lastResp
-        ? lastResp.attempts
-        : parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
-      usedCallback: chosen || "NONE",
-      error: "Forwarding failed (all candidates exhausted)",
-      details: errorDetails
-    }
-  };
 };
