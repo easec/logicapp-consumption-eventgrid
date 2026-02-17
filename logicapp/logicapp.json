@@ -22,10 +22,6 @@
             "$connections": {
               "type": "Object",
               "defaultValue": {}
-            },
-            "emailTo": {
-              "type": "String",
-              "defaultValue": ""
             }
           },
           "triggers": {
@@ -38,6 +34,7 @@
             }
           },
           "actions": {
+
             "NormalizedEvent": {
               "type": "Compose",
               "runAfter": {},
@@ -74,9 +71,8 @@
               "actions": {},
               "else": {
                 "actions": {
-                  "Return_400_InvalidEventType": {
+                  "Return_Invalid_EventType": {
                     "type": "Response",
-                    "runAfter": {},
                     "inputs": {
                       "statusCode": 400,
                       "headers": {
@@ -84,13 +80,7 @@
                       },
                       "body": {
                         "received": false,
-                        "error": "Invalid eventType (not allowed)",
-                        "allowedEventTypes": [
-                          "Microsoft.EventGrid.SubscriptionValidationEvent",
-                          "Microsoft.Storage.BlobCreated",
-                          "Microsoft.Storage.BlobTierChanged"
-                        ],
-                        "gotEventType": "@coalesce(outputs('NormalizedEvent')?['eventType'], '')"
+                        "error": "Invalid eventType"
                       }
                     }
                   }
@@ -112,7 +102,6 @@
               "actions": {
                 "Return_Validation_Code": {
                   "type": "Response",
-                  "runAfter": {},
                   "inputs": {
                     "statusCode": 200,
                     "headers": {
@@ -126,9 +115,9 @@
               },
               "else": {
                 "actions": {
+
                   "Validate_Storage_Fields": {
                     "type": "If",
-                    "runAfter": {},
                     "expression": {
                       "and": [
                         {
@@ -136,14 +125,6 @@
                             "equals": [
                               "@coalesce(outputs('NormalizedEvent')?['subject'], '')",
                               ""
-                            ]
-                          }
-                        },
-                        {
-                          "not": {
-                            "equals": [
-                              "@coalesce(outputs('NormalizedEvent')?['data'], null)",
-                              null
                             ]
                           }
                         },
@@ -168,9 +149,8 @@
                     "actions": {},
                     "else": {
                       "actions": {
-                        "Return_400_MissingFields": {
+                        "Return_Missing_Fields": {
                           "type": "Response",
-                          "runAfter": {},
                           "inputs": {
                             "statusCode": 400,
                             "headers": {
@@ -178,17 +158,7 @@
                             },
                             "body": {
                               "received": false,
-                              "error": "Invalid Storage event payload (missing required fields)",
-                              "required": [
-                                "subject",
-                                "data.accessTier",
-                                "data.url"
-                              ],
-                              "got": {
-                                "subject": "@coalesce(outputs('NormalizedEvent')?['subject'], '')",
-                                "accessTier": "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
-                                "url": "@coalesce(outputs('NormalizedEvent')?['data']?['url'], '')"
-                              }
+                              "error": "Missing required storage fields"
                             }
                           }
                         }
@@ -218,8 +188,8 @@
                         {
                           "not": {
                             "equals": [
-                              "@bool(coalesce(outputs('NormalizedEvent')?['data']?['isPreflight'], false))",
-                              true
+                              "@toLower(string(coalesce(outputs('NormalizedEvent')?['data']?['isPreflight'], 'false')))",
+                              "true"
                             ]
                           }
                         }
@@ -228,7 +198,6 @@
                     "actions": {
                       "Send_an_email_(V2)": {
                         "type": "ApiConnection",
-                        "runAfter": {},
                         "inputs": {
                           "host": {
                             "connection": {
@@ -256,8 +225,8 @@
                     "runAfter": {
                       "Is_Hot_Tier_And_Not_Preflight": [
                         "Succeeded",
-                        "Failed",
                         "Skipped",
+                        "Failed",
                         "TimedOut"
                       ]
                     },
@@ -270,22 +239,21 @@
                         "received": true,
                         "eventType": "@coalesce(outputs('NormalizedEvent')?['eventType'], '')",
                         "accessTier": "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
-                        "isPreflight": "@bool(coalesce(outputs('NormalizedEvent')?['data']?['isPreflight'], false))"
+                        "isPreflight": "@coalesce(outputs('NormalizedEvent')?['data']?['isPreflight'], false)"
                       }
                     }
                   }
+
                 }
               }
             }
+
           },
           "outputs": {}
         },
         "parameters": {
           "$connections": {
             "value": "[parameters('$connections')]"
-          },
-          "emailTo": {
-            "value": "[parameters('emailTo')]"
           }
         }
       }
