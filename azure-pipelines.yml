@@ -80,7 +80,51 @@ stages:
 
         # Logic App template
         python3 -m json.tool logicapp/logicapp.json > /dev/null
+            - bash: |
+                set -euo pipefail
+                python3 - <<'PY'
+        import json
+        from collections import Counter
 
+        p="logicapp/logicapp.json"
+        d=json.load(open(p))
+
+        # ARM template -> workflow definition actions live here
+        actions = d["resources"][0]["properties"]["definition"]["actions"]
+
+        def walk(node, out):
+            if not isinstance(node, dict):
+                return
+
+            # nested actions inside an action
+            if "actions" in node and isinstance(node["actions"], dict):
+                for k,v in node["actions"].items():
+                    out.append(k)
+                    walk(v, out)
+
+            # If action: else branch may contain actions
+            if node.get("type") == "If":
+                walk(node.get("else") or {}, out)
+
+            # Switch action: cases/default may contain actions
+            if node.get("type") == "Switch":
+                for c in (node.get("cases") or {}).values():
+                    walk(c, out)
+                walk(node.get("default") or {}, out)
+
+        names=[]
+        walk({"actions": actions}, names)
+
+        dups=[(k,v) for k,v in Counter(names).items() if v > 1]
+        if dups:
+            print("ERROR: Duplicate Logic App action names detected:")
+            for k,v in sorted(dups):
+                print(f"  {k}: {v} times")
+            raise SystemExit(1)
+
+        print(f"OK: {len(names)} action names, all unique.")
+        PY
+              displayName: Validate Logic App action names are unique
         # Logic App parameter files
         python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
         python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
