@@ -162,9 +162,7 @@ stages:
 
           az functionapp config appsettings set \
             -g "$RG" -n "$FUNC" \
-            --settings "LOGICAPP_CALLBACK_URL=$CALLBACK" \
-              "LOGICAPP_CALLBACK_URL_NEXT=" \
-             -o none
+            --settings "LOGICAPP_CALLBACK_URL_ACTIVE=$CALLBACK" "LOGICAPP_CALLBACK_URL_NEXT=" -o none
 
           az functionapp restart -g "$RG" -n "$FUNC" -o none
 
