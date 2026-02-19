@@ -14,11 +14,6 @@ function isRetryableStatus(status) {
   return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
-// ✅ Only fallback for transient statuses (or network errors)
-function shouldFallbackFromNext(status) {
-  return isRetryableStatus(status);
-}
-
 function postJsonOnce(targetUrl, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(targetUrl);
@@ -37,12 +32,7 @@ function postJsonOnce(targetUrl, body) {
     const req = https.request(options, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        resolve({
-          status: res.statusCode || 0,
-          body: data
-        });
-      });
+      res.on("end", () => resolve({ status: res.statusCode || 0, body: data }));
     });
 
     req.on("error", reject);
@@ -51,12 +41,6 @@ function postJsonOnce(targetUrl, body) {
   });
 }
 
-/**
- * Retry policy:
- * - Attempts: env FORWARD_MAX_ATTEMPTS (default 4)
- * - Backoff: exponential + jitter
- * - Retry on: 408, 429, 5xx, and network errors
- */
 async function postJsonWithRetry(context, targetUrl, body) {
   const maxAttempts = parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10);
   const baseDelayMs = parseInt(process.env.FORWARD_BASE_DELAY_MS || "500", 10);
@@ -70,9 +54,7 @@ async function postJsonWithRetry(context, targetUrl, body) {
       const resp = await postJsonOnce(targetUrl, body);
       last = resp;
 
-      if (resp.status >= 200 && resp.status < 300) {
-        return { ...resp, attempts: attempt };
-      }
+      if (resp.status >= 200 && resp.status < 300) return { ...resp, attempts: attempt };
 
       if (!isRetryableStatus(resp.status) || attempt === maxAttempts) {
         return { ...resp, attempts: attempt };
@@ -82,35 +64,24 @@ async function postJsonWithRetry(context, targetUrl, body) {
       const jitter = Math.floor(Math.random() * Math.min(250, exp));
       const delay = Math.min(maxDelayMs, exp + jitter);
 
-      context.log(
-        `Forward attempt ${attempt} got ${resp.status}. Retrying in ${delay}ms...`
-      );
+      context.log(`Forward attempt ${attempt} got ${resp.status}. Retrying in ${delay}ms...`);
       await sleep(delay);
     } catch (err) {
       lastErr = err;
-
       if (attempt === maxAttempts) break;
 
       const exp = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt - 1));
       const jitter = Math.floor(Math.random() * Math.min(250, exp));
       const delay = Math.min(maxDelayMs, exp + jitter);
 
-      context.log(
-        `Forward attempt ${attempt} failed (network). Retrying in ${delay}ms...`
-      );
+      context.log(`Forward attempt ${attempt} failed (network). Retrying in ${delay}ms...`);
       await sleep(delay);
     }
   }
 
-  throw lastErr || new Error(`Forwarding failed after ${maxAttempts} attempts`);
+  throw lastErr || new Error("Forwarding failed after retries");
 }
 
-/**
- * Strategy A:
- * - Prefer NEXT if set (canary)
- * - Otherwise use ACTIVE
- * - Fallback from NEXT → ACTIVE only for transient errors (or network errors)
- */
 function selectCallbackUrls() {
   const next = process.env.LOGICAPP_CALLBACK_URL_NEXT || "";
   const active = process.env.LOGICAPP_CALLBACK_URL_ACTIVE || "";
@@ -121,155 +92,154 @@ function selectCallbackUrls() {
   return urls;
 }
 
+function safeJsonParse(x) {
+  try {
+    return { ok: true, value: JSON.parse(x) };
+  } catch {
+    return { ok: false, value: null };
+  }
+}
+
 module.exports = async function (context, req) {
-  const body = req.body;
+  // HARD GUARANTEE: never let an exception escape => Event Grid would see 500
+  try {
+    // Accept both already-parsed JSON and raw strings
+    let body = req.body;
 
-  if (!body) {
-    context.log("Request received with empty body");
-    context.res = { status: 400, body: { error: "Empty body" } };
-    return;
-  }
+    if (!body && typeof req.rawBody === "string" && req.rawBody.trim()) {
+      const parsed = safeJsonParse(req.rawBody);
+      if (parsed.ok) body = parsed.value;
+    }
 
-  context.log(`EventGrid payload: ${JSON.stringify(body)}`);
-
-  const first = Array.isArray(body) ? body[0] : body;
-
-  // Subscription validation
-  if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
-    const code = first?.data?.validationCode || "";
-    context.log(`Handling SubscriptionValidationEvent. code=${code}`);
-    context.res = {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-      body: { validationResponse: code }
-    };
-    return;
-  }
-
-  const candidates = selectCallbackUrls();
-
-  if (candidates.length === 0) {
-    context.log(
-      "No callback URL configured. Need LOGICAPP_CALLBACK_URL_ACTIVE (and optional _NEXT)."
-    );
-    context.res = {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-      body: { error: "No Logic App callback URL configured" }
-    };
-    return;
-  }
-
-  context.log(
-    "Callback candidates:",
-    candidates.map((c) => `${c.label}=${redactSig(c.url)}`).join(" | ")
-  );
-
-  const allowFallback =
-    String(process.env.FORWARD_ALLOW_FALLBACK || "true").toLowerCase() === "true";
-
-  const includeBody =
-    String(process.env.RETURN_FORWARDED_BODY || "false").toLowerCase() === "true";
-
-  let lastResp = null;
-  let chosen = null;
-  let errorDetails = "";
-
-  for (let i = 0; i < candidates.length; i++) {
-    const { label, url } = candidates[i];
-    chosen = label;
-
-    try {
-      const resp = await postJsonWithRetry(context, url, body);
-      lastResp = resp;
-
-      const success = resp.status >= 200 && resp.status < 300;
-
-      context.log(
-        `Forwarded to Logic App (${label}). Status: ${resp.status}. Attempts: ${resp.attempts}`
-      );
-
-      const forwardedBody = includeBody
-        ? resp.body && resp.body.length > 4000
-          ? resp.body.slice(0, 4000) + "...(truncated)"
-          : resp.body || ""
-        : undefined;
-
-      // ✅ If success OR fallback disabled OR ACTIVE already -> return
-      if (success || !allowFallback || label === "ACTIVE") {
-        context.res = {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-          body: {
-            ok: success,
-            forwardedStatus: resp.status,
-            attempts: resp.attempts,
-            usedCallback: label,
-            ...(includeBody ? { forwardedBody } : {})
-          }
-        };
-        return;
-      }
-
-      // ✅ Non-2xx from NEXT: fallback ONLY if transient
-      if (label === "NEXT" && shouldFallbackFromNext(resp.status)) {
-        context.log(
-          `Transient non-2xx from NEXT (${resp.status}). Trying ACTIVE if configured...`
-        );
-        continue;
-      }
-
-      // ❌ Non-transient non-2xx from NEXT: fail fast (don’t mask bad config)
+    if (!body) {
+      context.log("Empty/unparseable body from Event Grid");
       context.res = {
         status: 200,
         headers: { "Content-Type": "application/json" },
-        body: {
-          ok: false,
-          forwardedStatus: resp.status,
-          attempts: resp.attempts,
-          usedCallback: label,
-          error: `Non-retryable response from ${label}`,
-          ...(includeBody ? { forwardedBody } : {})
-        }
+        body: { ok: false, error: "Empty/unparseable body" }
       };
       return;
-    } catch (err) {
-      errorDetails = String(err && err.stack ? err.stack : err);
-      context.log(`Error forwarding to Logic App (${label}): ${errorDetails}`);
+    }
 
-      // ✅ Network error: fallback is okay (if allowed + ACTIVE exists)
-      if (!allowFallback || label === "ACTIVE") {
-        context.res = {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-          body: {
-            ok: false,
-            forwardedStatus: 0,
-            attempts: parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
-            usedCallback: label,
-            error: "Forwarding failed after retries",
-            details: errorDetails
-          }
-        };
-        return;
+    const first = Array.isArray(body) ? body[0] : body;
+
+    // Validation handshake
+    if (first?.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
+      const code = first?.data?.validationCode || "";
+      context.log(`SubscriptionValidationEvent received. code=${code}`);
+      context.res = {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: { validationResponse: code }
+      };
+      return;
+    }
+
+    const candidates = selectCallbackUrls();
+    if (candidates.length === 0) {
+      context.log("No callback URL configured (need LOGICAPP_CALLBACK_URL_ACTIVE)");
+      context.res = {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: { ok: false, error: "No Logic App callback URL configured" }
+      };
+      return;
+    }
+
+    const allowFallback =
+      String(process.env.FORWARD_ALLOW_FALLBACK || "true").toLowerCase() === "true";
+    const includeBody =
+      String(process.env.RETURN_FORWARDED_BODY || "false").toLowerCase() === "true";
+
+    context.log(
+      "Callback candidates:",
+      candidates.map((c) => `${c.label}=${redactSig(c.url)}`).join(" | ")
+    );
+
+    let last = null;
+    let used = "NONE";
+    let details = "";
+
+    for (const c of candidates) {
+      used = c.label;
+      try {
+        const resp = await postJsonWithRetry(context, c.url, body);
+        last = resp;
+
+        const success = resp.status >= 200 && resp.status < 300;
+
+        context.log(
+          `Forwarded to Logic App (${c.label}). Status=${resp.status} Attempts=${resp.attempts}`
+        );
+
+        if (success || !allowFallback || c.label === "ACTIVE") {
+          context.res = {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+            body: {
+              ok: success,
+              forwardedStatus: resp.status,
+              attempts: resp.attempts,
+              usedCallback: used,
+              ...(includeBody
+                ? {
+                    forwardedBody:
+                      resp.body && resp.body.length > 4000
+                        ? resp.body.slice(0, 4000) + "...(truncated)"
+                        : resp.body || ""
+                  }
+                : {})
+            }
+          };
+          return;
+        }
+
+        // Non-2xx from NEXT -> try ACTIVE
+        context.log(`Non-2xx from ${c.label} (status=${resp.status}); trying fallback...`);
+      } catch (err) {
+        details = String(err && err.stack ? err.stack : err);
+        context.log(`Forwarding error (${c.label}): ${details}`);
+
+        if (!allowFallback || c.label === "ACTIVE") {
+          // IMPORTANT: still 200 to Event Grid
+          context.res = {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+            body: {
+              ok: false,
+              forwardedStatus: 0,
+              attempts: parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
+              usedCallback: used,
+              error: "Forwarding failed after retries",
+              details
+            }
+          };
+          return;
+        }
+        // else try next candidate
       }
-
-      // else: try next candidate (ACTIVE)
     }
+
+    // All candidates exhausted
+    context.res = {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: {
+        ok: false,
+        forwardedStatus: last ? last.status : 0,
+        attempts: last ? last.attempts : parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
+        usedCallback: used,
+        error: "Forwarding failed (all candidates exhausted)",
+        details
+      }
+    };
+  } catch (e) {
+    // absolute last-resort safety net
+    context.log(`Unhandled exception: ${String(e && e.stack ? e.stack : e)}`);
+    context.res = {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: { ok: false, error: "Unhandled exception (caught)", details: String(e) }
+    };
   }
-
-  context.res = {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-    body: {
-      ok: false,
-      forwardedStatus: lastResp ? lastResp.status : 0,
-      attempts: lastResp
-        ? lastResp.attempts
-        : parseInt(process.env.FORWARD_MAX_ATTEMPTS || "4", 10),
-      usedCallback: chosen || "NONE",
-      error: "Forwarding failed (all candidates exhausted)",
-      details: errorDetails
-    }
-  };
 };
