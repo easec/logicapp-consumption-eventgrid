@@ -73,7 +73,13 @@
             { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" },
             { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
             { "name": "ENABLE_ORYX_BUILD", "value": "false" },
-
+            { "name": "LOGICAPP_CALLBACK_URL_ACTIVE", "value": "" },
+            { "name": "LOGICAPP_CALLBACK_URL_NEXT", "value": "" },
+            { "name": "FORWARD_ALLOW_FALLBACK", "value": "true" },
+            { "name": "FORWARD_MAX_ATTEMPTS", "value": "4" },
+            { "name": "FORWARD_BASE_DELAY_MS", "value": "500" },
+            { "name": "FORWARD_MAX_DELAY_MS", "value": "8000" },
+            { "name": "RETURN_FORWARDED_BODY", "value": "false" },
             {
               "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
               "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
