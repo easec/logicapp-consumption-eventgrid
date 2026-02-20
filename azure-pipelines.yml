@@ -137,7 +137,7 @@ stages:
       displayName: Set outputs variables
 
     - task: AzureCLI@2
-      displayName: Fetch Logic App callback URL -> set Function appsetting (ACTIVE + guardrail)
+      displayName: Fetch Logic App callback URL -> set Function appsetting (ACTIVE)
       inputs:
         azureSubscription: ${{ parameters.azureServiceConnection }}
         scriptType: bash
@@ -151,29 +151,21 @@ stages:
           FUNC="$(functionAppName)"
           SUB="$(az account show --query id -o tsv)"
 
-          echo "Fetching callback URL for Logic App: $LA / trigger: $TRIGGER (RG: $RG, SUB: $SUB)"
+          echo "RG=$RG  LA=$LA  FUNC=$FUNC  TRIGGER=$TRIGGER  SUB=$SUB"
 
+          # Guardrail 1: Ensure Function App exists in this RG
+          az functionapp show -g "$RG" -n "$FUNC" -o none
+
+          # Guardrail 2: Ensure Logic App exists in this RG
+          az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
+
+          echo "Fetching callback URL for $LA / $TRIGGER..."
           CALLBACK="$(az rest --method POST \
             --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
             --body '{}' --query "value" -o tsv)"
 
           if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
             echo "ERROR: Could not retrieve callback URL."
-            exit 1
-          fi
-
-          # ---- Guardrail: ensure callback URL belongs to THIS Logic App (prevents Dev->Prod mixups) ----
-          GUID_IN_URL="$(echo "$CALLBACK" | sed -n 's#.*workflows/\([^/]*\)/.*#\1#p')"
-
-          LA_ID="$(az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows --query id -o tsv)"
-          LA_GUID="$(echo "$LA_ID" | sed -n 's#.*/workflows/\([^/]*\)$#\1#p')"
-
-          echo "Callback GUID: $GUID_IN_URL"
-          echo "LogicApp  GUID: $LA_GUID"
-
-          if [ -z "$GUID_IN_URL" ] || [ -z "$LA_GUID" ] || [ "$GUID_IN_URL" != "$LA_GUID" ]; then
-            echo "ERROR: Callback URL does not belong to this Logic App. Refusing to set Function appsettings."
-            echo "  Logic App: $LA (RG: $RG)"
             exit 1
           fi
 
@@ -186,25 +178,21 @@ stages:
             --settings "LOGICAPP_CALLBACK_URL_ACTIVE=$CALLBACK" "LOGICAPP_CALLBACK_URL_NEXT=" \
             -o none
 
-          echo "Restarting Function App to pick up settings..."
+          echo "Restarting Function App..."
           az functionapp restart -g "$RG" -n "$FUNC" -o none
 
-          echo "Verifying settings exist (values redacted):"
+          echo "Verify (values redacted):"
           az functionapp config appsettings list -g "$RG" -n "$FUNC" \
             --query "[?name=='LOGICAPP_CALLBACK_URL_ACTIVE' || name=='LOGICAPP_CALLBACK_URL_NEXT'].{name:name,value:value}" -o table \
             | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
-
-          # Optional: pipeline variable (contains full sig). Keep only if you truly need it later.
-          echo "##vso[task.setvariable variable=logicAppCallbackUrl]$CALLBACK"
-
-    - task: ArchiveFiles@2
-      displayName: Zip Function code
-      inputs:
-        rootFolderOrFile: functionapp
-        includeRootFolder: false
-        archiveType: zip
-        archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
-        replaceExistingArchive: true
+          - task: ArchiveFiles@2
+            displayName: Zip Function code
+            inputs:
+              rootFolderOrFile: functionapp
+              includeRootFolder: false
+            archiveType: zip
+            archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+            replaceExistingArchive: true
 
     - task: AzureCLI@2
       displayName: Deploy Function package (first-deploy retry only)
