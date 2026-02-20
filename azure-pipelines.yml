@@ -185,14 +185,16 @@ stages:
           az functionapp config appsettings list -g "$RG" -n "$FUNC" \
             --query "[?name=='LOGICAPP_CALLBACK_URL_ACTIVE' || name=='LOGICAPP_CALLBACK_URL_NEXT'].{name:name,value:value}" -o table \
             | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
-          - task: ArchiveFiles@2
-            displayName: Zip Function code
-            inputs:
-              rootFolderOrFile: functionapp
-              includeRootFolder: false
-            archiveType: zip
-            archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
-            replaceExistingArchive: true
+
+
+    - task: ArchiveFiles@2
+      displayName: Zip Function code
+      inputs:
+        rootFolderOrFile: functionapp
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+        replaceExistingArchive: true
 
     - task: AzureCLI@2
       displayName: Deploy Function package (first-deploy retry only)
