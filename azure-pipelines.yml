@@ -28,7 +28,7 @@ variables:
   - name: functionAppName
     value: fa-iscala-eg-proxy-dev
   - name: eventSubscriptionName
-    value: iscala-archive-egsub
+    value: evgd-iscala-archive-dev
   - name: rgLocation
     value: swedencentral
   - name: deadLetterStorageAccountName
@@ -48,7 +48,7 @@ variables:
   - name: functionAppName
     value: fa-iscala-eg-proxy-prod
   - name: eventSubscriptionName
-    value: iscala-archive-egsub-prod
+    value: evgd-iscala-archive-prod
   - name: rgLocation
     value: swedencentral
   - name: deadLetterStorageAccountName
