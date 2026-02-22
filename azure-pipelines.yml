@@ -54,308 +54,493 @@ variables:
   - name: deadLetterStorageAccountName
     value: stiscalasnapshotprod
 
-
-
-
 - name: storageAccountResourceId
   value: "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)"
-
 
 stages:
 - stage: Deploy
   displayName: Deploy ${{ parameters.targetEnv }}
   jobs:
-  - job: Deploy
-    pool:
-      name: easec-pool
-    steps:
-    - checkout: self
 
+  # =========================
+  # DEV JOB (no approvals)
+  # =========================
+  - ${{ if eq(parameters.targetEnv, 'dev') }}:
+    - job: DeployDev
+      displayName: Deploy DEV
+      pool:
+        name: easec-pool
+      steps:
+      - checkout: self
 
-    - bash: |
-        set -e
-        python3 -m json.tool infra/functionapp.json > /dev/null
-        python3 -m json.tool infra/connections.json > /dev/null
-        python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+      - bash: |
+          set -e
+          python3 -m json.tool infra/functionapp.json > /dev/null
+          python3 -m json.tool infra/connections.json > /dev/null
+          python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+          python3 -m json.tool logicapp/logicapp.json > /dev/null
+          python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
+          python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
+        displayName: Validate JSON templates
 
-        # Logic App template
-        python3 -m json.tool logicapp/logicapp.json > /dev/null
+      - task: AzureCLI@2
+        displayName: Set subscriptionId variable
+        inputs:
+          azureSubscription: ${{ parameters.azureServiceConnection }}
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
+            echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
 
-        # Logic App parameter files
-        python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
-        python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
-      displayName: Validate JSON templates
+      - task: AzureCLI@2
+        displayName: HARD GUARDRAILS (fail if env mismatched)
+        inputs:
+          azureSubscription: ${{ parameters.azureServiceConnection }}
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
 
-    - task: AzureCLI@2
-      displayName: Set subscriptionId variable
-      inputs:
-        azureSubscription: ${{ parameters.azureServiceConnection }}
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
+            ENV="${{ parameters.targetEnv }}"
+            RG="$(resourceGroupName)"
+            LA="$(logicAppName)"
+            FUNC="$(functionAppName)"
+            ST="$(storageAccount)"
+            EG="$(eventSubscriptionName)"
+            SUB="$(az account show --query id -o tsv)"
 
-    - task: AzureCLI@2
-      displayName: HARD GUARDRAILS (fail if env mismatched)
-      inputs:
-        azureSubscription: ${{ parameters.azureServiceConnection }}
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
+            echo "Guardrails for ENV=$ENV"
+            echo "RG=$RG"
+            echo "LA=$LA"
+            echo "FUNC=$FUNC"
+            echo "ST=$ST"
+            echo "EGSUB=$EG"
+            echo "SUB=$SUB"
 
-          ENV="${{ parameters.targetEnv }}"
-          RG="$(resourceGroupName)"
-          LA="$(logicAppName)"
-          FUNC="$(functionAppName)"
-          ST="$(storageAccount)"
-          EG="$(eventSubscriptionName)"
-          SUB="$(az account show --query id -o tsv)"
+            fail() { echo "ERROR: $*" >&2; exit 1; }
 
-          echo "Guardrails for ENV=$ENV"
-          echo "RG=$RG"
-          echo "LA=$LA"
-          echo "FUNC=$FUNC"
-          echo "ST=$ST"
-          echo "EGSUB=$EG"
-          echo "SUB=$SUB"
+            if [ "$ENV" = "dev" ]; then
+              [[ "$RG"   =~ -prod$ ]] && fail "DEV run but RG looks prod: $RG"
+              [[ "$LA"   =~ -prod$ ]] && fail "DEV run but LogicApp looks prod: $LA"
+              [[ "$FUNC" =~ -prod$ ]] && fail "DEV run but Function looks prod: $FUNC"
+              [ "$ST" = "stiscalasnapshotprod" ] && fail "DEV run but Storage is prod: $ST"
+              [[ "$EG" =~ -prod$ ]] && fail "DEV run but EventSub looks prod: $EG"
+            fi
 
-          fail() { echo "ERROR: $*" >&2; exit 1; }
+            # Ensure Logic App exists in intended RG
+            az resource show -g "$RG" -n "$LA" --resource-type "Microsoft.Logic/workflows" -o none \
+              || fail "Logic App $LA not found in RG $RG"
 
-          # --- 1) Naming conventions (simple but effective) ---
-          if [ "$ENV" = "dev" ]; then
-            [[ "$RG"   =~ -prod$ ]] && fail "DEV run but RG looks prod: $RG"
-            [[ "$LA"   =~ -prod$ ]] && fail "DEV run but LogicApp looks prod: $LA"
-            [[ "$FUNC" =~ -prod$ ]] && fail "DEV run but Function looks prod: $FUNC"
-            [ "$ST" = "stiscalasnapshotprod" ] && fail "DEV run but Storage is prod: $ST"
-            [[ "$EG" =~ -prod$ ]] && fail "DEV run but EventSub looks prod: $EG"
-          fi
+            TRIGGER="$(triggerName)"
+            CALLBACK="$(az rest --method POST \
+              --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+              --body '{}' --query "value" -o tsv)"
 
-          if [ "$ENV" = "prod" ]; then
-            [[ "$RG"   =~ -prod$ ]] || fail "PROD run but RG not -prod: $RG"
-            [[ "$LA"   =~ -prod$ ]] || fail "PROD run but LogicApp not -prod: $LA"
-            [[ "$FUNC" =~ -prod$ ]] || fail "PROD run but Function not -prod: $FUNC"
-            [ "$ST" = "snapshottestsa" ] && fail "PROD run but Storage is dev: $ST"
-            [[ "$EG" =~ -prod$ ]] || fail "PROD run but EventSub not -prod: $EG"
-          fi
+            [ -n "$CALLBACK" ] && [ "$CALLBACK" != "null" ] || fail "Could not retrieve callback URL"
+            CB_GUID="$(echo "$CALLBACK" | sed -n 's#.*workflows/\([^/]*\)/.*#\1#p')"
+            [ -n "$CB_GUID" ] || fail "Could not parse workflow GUID from callback URL"
 
-          # --- 2) Ensure the Logic App exists in the intended RG ---
-          az resource show -g "$RG" -n "$LA" --resource-type "Microsoft.Logic/workflows" -o none \
-            || fail "Logic App $LA not found in RG $RG"
+            EXPECTED_GUID="$(az rest --method POST \
+              --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+              --body '{}' --query "value" -o tsv \
+              | sed -n 's#.*workflows/\([^/]*\)/.*#\1#p')"
 
-          # --- 3) (Strong check) Callback URL belongs to this Logic App ---
-          TRIGGER="$(triggerName)"
-          CALLBACK="$(az rest --method POST \
-            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
-            --body '{}' --query "value" -o tsv)"
+            [ "$CB_GUID" = "$EXPECTED_GUID" ] || fail "Callback GUID mismatch. Got=$CB_GUID Expected=$EXPECTED_GUID"
+            echo "HARD GUARDRAILS PASSED ✅"
 
-          [ -n "$CALLBACK" ] && [ "$CALLBACK" != "null" ] || fail "Could not retrieve callback URL"
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: Deploy Connections
+        inputs:
+          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+          deploymentScope: Resource Group
+          resourceGroupName: $(resourceGroupName)
+          location: $(rgLocation)
+          csmFile: infra/connections.json
+          csmParametersFile: infra/parameters/connections.${{ parameters.targetEnv }}.json
+          deploymentMode: Incremental
 
-          # Extract workflow GUID from callback URL: .../workflows/<GUID>/triggers/...
-          CB_GUID="$(echo "$CALLBACK" | sed -n 's#.*workflows/\([^/]*\)/.*#\1#p')"
-          [ -n "$CB_GUID" ] || fail "Could not parse workflow GUID from callback URL"
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: Deploy Logic App (dev)
+        inputs:
+          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+          deploymentScope: Resource Group
+          resourceGroupName: $(resourceGroupName)
+          location: $(rgLocation)
+          csmFile: logicapp/logicapp.json
+          csmParametersFile: infra/parameters/logicapp.${{ parameters.targetEnv }}.json
+          deploymentMode: Incremental
 
-          # Find expected GUID from the Logic App resource id
-          # Logic App resourceId contains the workflow name, but callback has GUID, so validate by asking ARM for trigger callback and parsing too:
-          EXPECTED_GUID="$(az rest --method POST \
-            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
-            --body '{}' --query "value" -o tsv \
-            | sed -n 's#.*workflows/\([^/]*\)/.*#\1#p')"
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: Deploy Function infra
+        inputs:
+          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+          deploymentScope: Resource Group
+          resourceGroupName: $(resourceGroupName)
+          location: $(rgLocation)
+          csmFile: infra/functionapp.json
+          csmParametersFile: infra/parameters/functionapp.${{ parameters.targetEnv }}.json
+          deploymentMode: Incremental
+          deploymentOutputs: functionOutputs
 
-          [ "$CB_GUID" = "$EXPECTED_GUID" ] || fail "Callback GUID mismatch (callback does not belong to $LA in $RG). Got=$CB_GUID Expected=$EXPECTED_GUID"
+      - script: |
+          echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+          echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
+        displayName: Set outputs variables
 
-          echo "OK: Callback GUID matches Logic App in correct RG."
+      - task: AzureCLI@2
+        displayName: Fetch Logic App callback URL -> set Function appsetting (ACTIVE)
+        inputs:
+          azureSubscription: ${{ parameters.azureServiceConnection }}
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
 
-          # --- 4) Optional: refuse any prod callback host in dev (extra belt+suspenders) ---
-          if [ "$ENV" = "dev" ]; then
-            echo "$CALLBACK" | grep -qi "/workflows/${CB_GUID}/" || fail "DEV callback URL does not contain expected workflow GUID"
-            echo "$CALLBACK" | grep -qi "logic.azure.com" || fail "Callback URL doesn't look like Logic Apps"
-          fi
+            RG="$(resourceGroupName)"
+            LA="$(logicAppName)"
+            TRIGGER="$(triggerName)"
+            FUNC="$(functionAppName)"
+            SUB="$(az account show --query id -o tsv)"
 
-          echo "HARD GUARDRAILS PASSED ✅"
+            az functionapp show -g "$RG" -n "$FUNC" -o none
+            az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
 
-    - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Connections
-      inputs:
-        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(rgLocation)
-        csmFile: infra/connections.json
-        csmParametersFile: infra/parameters/connections.${{ parameters.targetEnv }}.json
-        deploymentMode: Incremental
+            CALLBACK="$(az rest --method POST \
+              --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+              --body '{}' --query "value" -o tsv)"
 
-    - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Logic App (${{ parameters.targetEnv }})
-      inputs:
-        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(rgLocation)
-        csmFile: logicapp/logicapp.json
-        csmParametersFile: infra/parameters/logicapp.${{ parameters.targetEnv }}.json
-        deploymentMode: Incremental
+            if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+              echo "ERROR: Could not retrieve callback URL."
+              exit 1
+            fi
 
-    - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Function infra
-      inputs:
-        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(rgLocation)
-        csmFile: infra/functionapp.json
-        csmParametersFile: infra/parameters/functionapp.${{ parameters.targetEnv }}.json
-        deploymentMode: Incremental
-        deploymentOutputs: functionOutputs
+            az functionapp config appsettings set \
+              -g "$RG" -n "$FUNC" \
+              --settings "LOGICAPP_CALLBACK_URL_ACTIVE=$CALLBACK" "LOGICAPP_CALLBACK_URL_NEXT=" \
+              -o none
 
-    - script: |
-        echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
-        echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
-      displayName: Set outputs variables
-
-    - task: AzureCLI@2
-      displayName: Fetch Logic App callback URL -> set Function appsetting (ACTIVE)
-      inputs:
-        azureSubscription: ${{ parameters.azureServiceConnection }}
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-
-          RG="$(resourceGroupName)"
-          LA="$(logicAppName)"
-          TRIGGER="$(triggerName)"
-          FUNC="$(functionAppName)"
-          SUB="$(az account show --query id -o tsv)"
-
-          echo "RG=$RG  LA=$LA  FUNC=$FUNC  TRIGGER=$TRIGGER  SUB=$SUB"
-
-          # Guardrail 1: Ensure Function App exists in this RG
-          az functionapp show -g "$RG" -n "$FUNC" -o none
-
-          # Guardrail 2: Ensure Logic App exists in this RG
-          az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
-
-          echo "Fetching callback URL for $LA / $TRIGGER..."
-          CALLBACK="$(az rest --method POST \
-            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
-            --body '{}' --query "value" -o tsv)"
-
-          if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
-            echo "ERROR: Could not retrieve callback URL."
-            exit 1
-          fi
-
-          echo "Callback URL (sig redacted):"
-          echo "$CALLBACK" | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
-
-          echo "Setting Function appsettings (ACTIVE) + clearing NEXT..."
-          az functionapp config appsettings set \
-            -g "$RG" -n "$FUNC" \
-            --settings "LOGICAPP_CALLBACK_URL_ACTIVE=$CALLBACK" "LOGICAPP_CALLBACK_URL_NEXT=" \
-            -o none
-
-          echo "Restarting Function App..."
-          az functionapp restart -g "$RG" -n "$FUNC" -o none
-
-          echo "Verify (values redacted):"
-          az functionapp config appsettings list -g "$RG" -n "$FUNC" \
-            --query "[?name=='LOGICAPP_CALLBACK_URL_ACTIVE' || name=='LOGICAPP_CALLBACK_URL_NEXT'].{name:name,value:value}" -o table \
-            | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
-
-
-    - task: ArchiveFiles@2
-      displayName: Zip Function code
-      inputs:
-        rootFolderOrFile: functionapp
-        includeRootFolder: false
-        archiveType: zip
-        archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
-        replaceExistingArchive: true
-
-    - task: AzureCLI@2
-      displayName: Deploy Function package (first-deploy retry only)
-      inputs:
-        azureSubscription: ${{ parameters.azureServiceConnection }}
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-
-          RG="$(resourceGroupName)"
-          FUNC="$(functionAppName)"
-          ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
-          MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
-
-          echo "Checking first-deploy marker: $MARKER_NAME"
-          MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
-            --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
-
-          if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
-            echo "First deployment detected -> enabling warmup + retries"
-
-            # Warm up SCM (harmless)
-            curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
-
-            max=3
-            delay=5
-            for i in $(seq 1 $max); do
-              echo "ZIP deploy attempt $i/$max..."
-              if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
-                echo "ZIP deploy accepted."
-                break
-              fi
-
-              if [ $i -eq $max ]; then
-                echo "ERROR: ZIP deploy failed after $max attempts."
-                echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
-                exit 1
-              fi
-
-              echo "Retrying in ${delay}s..."
-              sleep "$delay"
-              delay=$((delay * 2))
-            done
-
-            echo "Restarting Function App..."
             az functionapp restart -g "$RG" -n "$FUNC" -o none
 
-            echo "Setting marker so retries only happen once..."
-            az functionapp config appsettings set -g "$RG" -n "$FUNC" \
-              --settings "$MARKER_NAME=true" -o none
+            echo "Verify (values redacted):"
+            az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+              --query "[?name=='LOGICAPP_CALLBACK_URL_ACTIVE' || name=='LOGICAPP_CALLBACK_URL_NEXT'].{name:name,value:value}" -o table \
+              | sed -E 's/(sig=)[^&]+/\1REDACTED/g'
 
-          else
-            echo "Not first deployment (marker=$MARKER_VAL) -> single deploy"
-            az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
-            az functionapp restart -g "$RG" -n "$FUNC" -o none
-          fi
+      - task: ArchiveFiles@2
+        displayName: Zip Function code
+        inputs:
+          rootFolderOrFile: functionapp
+          includeRootFolder: false
+          archiveType: zip
+          archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+          replaceExistingArchive: true
 
-    - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Ensure dead-letter container exists
-      inputs:
-        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(rgLocation)
-        csmFile: infra/deadletter-container.json
-        overrideParameters: >
-          -storageAccountName "$(deadLetterStorageAccountName)"
-          -containerName "eventgrid-deadletter"
-        deploymentMode: Incremental
+      - task: AzureCLI@2
+        displayName: Deploy Function package (first-deploy retry only)
+        inputs:
+          azureSubscription: ${{ parameters.azureServiceConnection }}
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
 
-    - task: AzureResourceManagerTemplateDeployment@3
-      displayName: Deploy Event Grid subscription (dead-letter enabled)
-      inputs:
-        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-        deploymentScope: Resource Group
-        resourceGroupName: $(resourceGroupName)
-        location: $(rgLocation)
-        csmFile: infra/eventgrid-subscription.json
-        overrideParameters: >
-          -eventSubscriptionName "$(eventSubscriptionName)"
-          -sourceResourceId "$(storageAccountResourceId)"
-          -endpointUrl "$(functionWebhookUrl)"
-          -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
-          -deadLetterContainerName "eventgrid-deadletter"
-        deploymentMode: Incremental
+            RG="$(resourceGroupName)"
+            FUNC="$(functionAppName)"
+            ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
+            MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
+
+            MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+              --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
+
+            if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
+              echo "First deployment detected -> enabling warmup + retries"
+              curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+
+              max=3
+              delay=5
+              for i in $(seq 1 $max); do
+                echo "ZIP deploy attempt $i/$max..."
+                if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
+                  break
+                fi
+                if [ $i -eq $max ]; then
+                  echo "ERROR: ZIP deploy failed after $max attempts."
+                  echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
+                  exit 1
+                fi
+                sleep "$delay"
+                delay=$((delay * 2))
+              done
+
+              az functionapp restart -g "$RG" -n "$FUNC" -o none
+              az functionapp config appsettings set -g "$RG" -n "$FUNC" --settings "$MARKER_NAME=true" -o none
+            else
+              az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
+              az functionapp restart -g "$RG" -n "$FUNC" -o none
+            fi
+
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: Ensure dead-letter container exists
+        inputs:
+          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+          deploymentScope: Resource Group
+          resourceGroupName: $(resourceGroupName)
+          location: $(rgLocation)
+          csmFile: infra/deadletter-container.json
+          overrideParameters: >
+            -storageAccountName "$(deadLetterStorageAccountName)"
+            -containerName "eventgrid-deadletter"
+          deploymentMode: Incremental
+
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: Deploy Event Grid subscription (dead-letter enabled)
+        inputs:
+          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+          deploymentScope: Resource Group
+          resourceGroupName: $(resourceGroupName)
+          location: $(rgLocation)
+          csmFile: infra/eventgrid-subscription.json
+          overrideParameters: >
+            -eventSubscriptionName "$(eventSubscriptionName)"
+            -sourceResourceId "$(storageAccountResourceId)"
+            -endpointUrl "$(functionWebhookUrl)"
+            -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
+            -deadLetterContainerName "eventgrid-deadletter"
+          deploymentMode: Incremental
+
+
+  # =========================
+  # PROD DEPLOYMENT (approval via Environment)
+  # =========================
+  - ${{ if eq(parameters.targetEnv, 'prod') }}:
+    - deployment: DeployProd
+      displayName: Deploy PROD (requires approval)
+      environment: iscala-archive-prod
+      pool:
+        name: easec-pool
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - checkout: self
+
+            - bash: |
+                set -e
+                python3 -m json.tool infra/functionapp.json > /dev/null
+                python3 -m json.tool infra/connections.json > /dev/null
+                python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+                python3 -m json.tool logicapp/logicapp.json > /dev/null
+                python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
+                python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
+              displayName: Validate JSON templates
+
+            - task: AzureCLI@2
+              displayName: Set subscriptionId variable
+              inputs:
+                azureSubscription: ${{ parameters.azureServiceConnection }}
+                scriptType: bash
+                scriptLocation: inlineScript
+                inlineScript: |
+                  set -euo pipefail
+                  echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
+
+            - task: AzureCLI@2
+              displayName: HARD GUARDRAILS (fail if env mismatched)
+              inputs:
+                azureSubscription: ${{ parameters.azureServiceConnection }}
+                scriptType: bash
+                scriptLocation: inlineScript
+                inlineScript: |
+                  set -euo pipefail
+
+                  ENV="${{ parameters.targetEnv }}"
+                  RG="$(resourceGroupName)"
+                  LA="$(logicAppName)"
+                  FUNC="$(functionAppName)"
+                  ST="$(storageAccount)"
+                  EG="$(eventSubscriptionName)"
+                  SUB="$(az account show --query id -o tsv)"
+
+                  fail() { echo "ERROR: $*" >&2; exit 1; }
+
+                  [[ "$RG"   =~ -prod$ ]] || fail "PROD run but RG not -prod: $RG"
+                  [[ "$LA"   =~ -prod$ ]] || fail "PROD run but LogicApp not -prod: $LA"
+                  [[ "$FUNC" =~ -prod$ ]] || fail "PROD run but Function not -prod: $FUNC"
+                  [ "$ST" = "snapshottestsa" ] && fail "PROD run but Storage is dev: $ST"
+                  [[ "$EG" =~ -prod$ ]] || fail "PROD run but EventSub not -prod: $EG"
+
+                  az resource show -g "$RG" -n "$LA" --resource-type "Microsoft.Logic/workflows" -o none \
+                    || fail "Logic App $LA not found in RG $RG"
+
+                  TRIGGER="$(triggerName)"
+                  CALLBACK="$(az rest --method POST \
+                    --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+                    --body '{}' --query "value" -o tsv)"
+
+                  [ -n "$CALLBACK" ] && [ "$CALLBACK" != "null" ] || fail "Could not retrieve callback URL"
+                  CB_GUID="$(echo "$CALLBACK" | sed -n 's#.*workflows/\([^/]*\)/.*#\1#p')"
+                  [ -n "$CB_GUID" ] || fail "Could not parse workflow GUID from callback URL"
+
+                  EXPECTED_GUID="$(az rest --method POST \
+                    --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+                    --body '{}' --query "value" -o tsv \
+                    | sed -n 's#.*workflows/\([^/]*\)/.*#\1#p')"
+
+                  [ "$CB_GUID" = "$EXPECTED_GUID" ] || fail "Callback GUID mismatch. Got=$CB_GUID Expected=$EXPECTED_GUID"
+                  echo "HARD GUARDRAILS PASSED ✅"
+
+            - task: AzureResourceManagerTemplateDeployment@3
+              displayName: Deploy Connections
+              inputs:
+                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+                deploymentScope: Resource Group
+                resourceGroupName: $(resourceGroupName)
+                location: $(rgLocation)
+                csmFile: infra/connections.json
+                csmParametersFile: infra/parameters/connections.${{ parameters.targetEnv }}.json
+                deploymentMode: Incremental
+
+            - task: AzureResourceManagerTemplateDeployment@3
+              displayName: Deploy Logic App (prod)
+              inputs:
+                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+                deploymentScope: Resource Group
+                resourceGroupName: $(resourceGroupName)
+                location: $(rgLocation)
+                csmFile: logicapp/logicapp.json
+                csmParametersFile: infra/parameters/logicapp.${{ parameters.targetEnv }}.json
+                deploymentMode: Incremental
+
+            - task: AzureResourceManagerTemplateDeployment@3
+              displayName: Deploy Function infra
+              inputs:
+                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+                deploymentScope: Resource Group
+                resourceGroupName: $(resourceGroupName)
+                location: $(rgLocation)
+                csmFile: infra/functionapp.json
+                csmParametersFile: infra/parameters/functionapp.${{ parameters.targetEnv }}.json
+                deploymentMode: Incremental
+                deploymentOutputs: functionOutputs
+
+            - script: |
+                echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+                echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
+              displayName: Set outputs variables
+
+            - task: AzureCLI@2
+              displayName: Fetch Logic App callback URL -> set Function appsetting (ACTIVE)
+              inputs:
+                azureSubscription: ${{ parameters.azureServiceConnection }}
+                scriptType: bash
+                scriptLocation: inlineScript
+                inlineScript: |
+                  set -euo pipefail
+
+                  RG="$(resourceGroupName)"
+                  LA="$(logicAppName)"
+                  TRIGGER="$(triggerName)"
+                  FUNC="$(functionAppName)"
+                  SUB="$(az account show --query id -o tsv)"
+
+                  az functionapp show -g "$RG" -n "$FUNC" -o none
+                  az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
+
+                  CALLBACK="$(az rest --method POST \
+                    --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+                    --body '{}' --query "value" -o tsv)"
+
+                  if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+                    echo "ERROR: Could not retrieve callback URL."
+                    exit 1
+                  fi
+
+                  az functionapp config appsettings set \
+                    -g "$RG" -n "$FUNC" \
+                    --settings "LOGICAPP_CALLBACK_URL_ACTIVE=$CALLBACK" "LOGICAPP_CALLBACK_URL_NEXT=" \
+                    -o none
+
+                  az functionapp restart -g "$RG" -n "$FUNC" -o none
+
+            - task: ArchiveFiles@2
+              displayName: Zip Function code
+              inputs:
+                rootFolderOrFile: functionapp
+                includeRootFolder: false
+                archiveType: zip
+                archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+                replaceExistingArchive: true
+
+            - task: AzureCLI@2
+              displayName: Deploy Function package (first-deploy retry only)
+              inputs:
+                azureSubscription: ${{ parameters.azureServiceConnection }}
+                scriptType: bash
+                scriptLocation: inlineScript
+                inlineScript: |
+                  set -euo pipefail
+
+                  RG="$(resourceGroupName)"
+                  FUNC="$(functionAppName)"
+                  ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
+                  MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
+
+                  MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+                    --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
+
+                  if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
+                    echo "First deployment detected -> enabling warmup + retries"
+                    curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+
+                    max=3
+                    delay=5
+                    for i in $(seq 1 $max); do
+                      echo "ZIP deploy attempt $i/$max..."
+                      if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
+                        break
+                      fi
+                      if [ $i -eq $max ]; then
+                        echo "ERROR: ZIP deploy failed after $max attempts."
+                        echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
+                        exit 1
+                      fi
+                      sleep "$delay"
+                      delay=$((delay * 2))
+                    done
+
+                    az functionapp restart -g "$RG" -n "$FUNC" -o none
+                    az functionapp config appsettings set -g "$RG" -n "$FUNC" --settings "$MARKER_NAME=true" -o none
+                  else
+                    az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
+                    az functionapp restart -g "$RG" -n "$FUNC" -o none
+                  fi
+
+            - task: AzureResourceManagerTemplateDeployment@3
+              displayName: Ensure dead-letter container exists
+              inputs:
+                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+                deploymentScope: Resource Group
+                resourceGroupName: $(resourceGroupName)
+                location: $(rgLocation)
+                csmFile: infra/deadletter-container.json
+                overrideParameters: >
+                  -storageAccountName "$(deadLetterStorageAccountName)"
+                  -containerName "eventgrid-deadletter"
+                deploymentMode: Incremental
+
+            - task: AzureResourceManagerTemplateDeployment@3
+              displayName: Deploy Event Grid subscription (dead-letter enabled)
+              inputs:
+                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+                deploymentScope: Resource Group
+                resourceGroupName: $(resourceGroupName)
+                location: $(rgLocation)
+                csmFile: infra/eventgrid-subscription.json
+                overrideParameters: >
+                  -eventSubscriptionName "$(eventSubscriptionName)"
+                  -sourceResourceId "$(storageAccountResourceId)"
+                  -endpointUrl "$(functionWebhookUrl)"
+                  -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
+                  -deadLetterContainerName "eventgrid-deadletter"
+                deploymentMode: Incremental
