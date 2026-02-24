@@ -3,10 +3,26 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": { "type": "string" },
+
+    "office365ConnectionName": { "type": "string" },
+    "office365DisplayName": { "type": "string" },
+
     "eventGridConnectionName": { "type": "string" },
     "eventGridDisplayName": { "type": "string" }
   },
   "resources": [
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('office365ConnectionName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "[parameters('office365DisplayName')]",
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/office365')]"
+        }
+      }
+    },
     {
       "type": "Microsoft.Web/connections",
       "apiVersion": "2016-06-01",
@@ -21,6 +37,10 @@
     }
   ],
   "outputs": {
+    "office365ConnectionId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Web/connections', parameters('office365ConnectionName'))]"
+    },
     "eventGridConnectionId": {
       "type": "string",
       "value": "[resourceId('Microsoft.Web/connections', parameters('eventGridConnectionName'))]"
