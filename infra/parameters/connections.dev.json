@@ -3,6 +3,10 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": { "value": "swedencentral" },
+
+    "office365ConnectionName": { "value": "conn-iscala-archive-o365-dev" },
+    "office365DisplayName": { "value": "conn-iscala-archive-o365-dev" },
+
     "eventGridConnectionName": { "value": "conn-iscala-archive-evgd-dev" },
     "eventGridDisplayName": { "value": "conn-iscala-archive-evgd-dev" }
   }
