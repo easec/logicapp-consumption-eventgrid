@@ -18,7 +18,7 @@ variables:
 - ${{ if eq(parameters.targetEnv, 'dev') }}:
   - group: variable_iScalaArchive
   - name: resourceGroupName
-    value: rg-iscala-archive-dev
+    value: rg-iscala-archive
   - name: logicAppName
     value: la-iscala-archive-dev
   - name: triggerName
