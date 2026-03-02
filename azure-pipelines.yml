@@ -20,7 +20,7 @@ variables:
   - name: resourceGroupName
     value: rg-iscala-archive
   - name: logicAppName
-    value: la-iscala-archive
+    value: la-iscala-archive-dev
   - name: triggerName
     value: When_HTTP_is_called
   - name: storageAccount
