@@ -4,6 +4,6 @@
   "parameters": {
     "functionAppName": { "value": "fa-iscala-eg-proxy-prod" },
     "location": { "value": "swedencentral" },
-    "storageAccountName": { "value": "stiscalasnapshotprod" }
+    "storageAccountName": { "value": "saiscalaegproxyprod01" }
   }
 }
