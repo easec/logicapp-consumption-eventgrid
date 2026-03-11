@@ -126,6 +126,7 @@
     "principalType": "ServicePrincipal"
   }
 },
+  {
   "outputs": {
     "functionWebhookUrl": {
       "type": "string",
