@@ -98,7 +98,7 @@
         }
       }
     },
-    {
+{
   "type": "Microsoft.Authorization/roleAssignments",
   "apiVersion": "2022-04-01",
   "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'blob')]",
@@ -125,6 +125,7 @@
     "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
     "principalType": "ServicePrincipal"
   }
+}
 },
   {
   "outputs": {
