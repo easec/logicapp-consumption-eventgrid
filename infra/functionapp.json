@@ -98,37 +98,34 @@
         }
       }
     },
-
     {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "name": "[guid(resourceGroup().id, parameters('functionAppName'), 'blob')]",
-      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
-      ],
-      "properties": {
-        "roleDefinitionId": "[variables('blobDataContributorRoleDefinitionId')]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
-        "principalType": "ServicePrincipal"
-      }
-    },
-
-    {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "name": "[guid(resourceGroup().id, parameters('functionAppName'), 'queue')]",
-      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
-      ],
-      "properties": {
-        "roleDefinitionId": "[variables('queueDataContributorRoleDefinitionId')]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
-        "principalType": "ServicePrincipal"
-      }
-    }
+  "type": "Microsoft.Authorization/roleAssignments",
+  "apiVersion": "2022-04-01",
+  "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'blob')]",
+  "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+  "dependsOn": [
+    "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
   ],
+  "properties": {
+    "roleDefinitionId": "[variables('blobDataContributorRoleDefinitionId')]",
+    "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
+    "principalType": "ServicePrincipal"
+  }
+},
+{
+  "type": "Microsoft.Authorization/roleAssignments",
+  "apiVersion": "2022-04-01",
+  "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'queue')]",
+  "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+  "dependsOn": [
+    "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+  ],
+  "properties": {
+    "roleDefinitionId": "[variables('queueDataContributorRoleDefinitionId')]",
+    "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
+    "principalType": "ServicePrincipal"
+  }
+},
   "outputs": {
     "functionWebhookUrl": {
       "type": "string",
