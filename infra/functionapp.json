@@ -125,7 +125,6 @@
     "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'Full').identity.principalId]",
     "principalType": "ServicePrincipal"
   }
-}
 },
   {
   "outputs": {
