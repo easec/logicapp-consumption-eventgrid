@@ -3,7 +3,8 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "keyVaultName": { "type": "string" },
-    "location": { "type": "string" }
+    "location": { "type": "string" },
+    "deploymentPrincipalObjectId": { "type": "string" }
   },
   "resources": [
     {
@@ -18,10 +19,18 @@
           "name": "standard",
           "family": "A"
         },
-        "accessPolicies": [],
         "enabledForDeployment": true,
         "enabledForTemplateDeployment": true,
-        "enabledForDiskEncryption": false
+        "enabledForDiskEncryption": false,
+        "accessPolicies": [
+          {
+            "tenantId": "[subscription().tenantId]",
+            "objectId": "[parameters('deploymentPrincipalObjectId')]",
+            "permissions": {
+              "secrets": [ "get", "list", "set" ]
+            }
+          }
+        ]
       }
     }
   ]
