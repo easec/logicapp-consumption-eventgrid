@@ -48,6 +48,21 @@ variables:
     value: infra/parameters/logicapp.dev.json
   - name: functionAppParametersFile
     value: infra/parameters/functionapp.dev.json
+  - name: sourceStorageAccount
+    value: snapshottestsa
+  - name: sourceContainer
+    value: snapshot
+  - name: sourceStorageResourceGroup
+    value: rg-iscala-archive
+
+- name: sourceStorageResourceGroup
+  value: rg-iscala-archive
+
+- name: sourceContainer
+  value: snapshot
+
+- name: sourceStorageResourceGroup
+  value: rg-iscala-archive
 
 # PROD
 - ${{ if eq(parameters.targetEnv, 'prod') }}:
@@ -76,6 +91,12 @@ variables:
     value: infra/parameters/logicapp.prod.json
   - name: functionAppParametersFile
     value: infra/parameters/functionapp.prod.json
+  - name: sourceStorageAccount
+    value: snapshottestsa
+  - name: sourceContainer
+    value: snapshot
+  - name: sourceStorageResourceGroup
+    value: rg-iscala-archive
 
 - name: deploymentPrincipalObjectId
   value: 94f97b9f-b688-4f99-a3ff-64e0e8a945d8
@@ -156,21 +177,33 @@ stages:
           [ "$EG" = "evgd-iscala-archive-dev" ] || fail "DEV must use EventSub evgd-iscala-archive-dev, got: $EG"
           [ "$KV" = "kv-iscala-archive-dev" ] || fail "DEV must use Key Vault kv-iscala-archive-dev, got: $KV"
 
+
           echo "Snapshot storage (event source / dead-letter): $ST"
+          echo "Environment storage: $ST"
+          echo "Shared source storage: $(sourceStorageAccount)"
+          echo "Shared source container: $(sourceContainer)"
           echo "Function runtime storage is defined in infra/parameters/functionapp.dev.json"
           echo "HARD GUARDRAILS PASSED ✅"
 
+
     - task: AzureCLI@2
-      displayName: Validate snapshot storage exists
+      displayName: Validate shared source snapshot storage exists
       inputs:
         azureSubscription: ${{ parameters.azureServiceConnection }}
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           set -euo pipefail
-          az storage account show -n "$(storageAccount)" -g "$(resourceGroupName)" -o none
-          echo "Snapshot storage exists."
+          az storage account show -n "$(sourceStorageAccount)" -g "$(sourceStorageResourceGroup)" -o none
+          echo "Shared source snapshot storage exists."
 
+          az storage container show \
+            --account-name "$(sourceStorageAccount)" \
+            --name "$(sourceContainer)" \
+            --auth-mode login \
+            -o none
+
+          echo "Shared source container exists."
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Key Vault (dev)
       inputs:
