@@ -936,15 +936,18 @@ stages:
               inlineScript: |
                 set -euo pipefail
 
-                RG_SOURCE="rg-iscala-archive"
-                ST="snapshottestsa"
                 SUB="$(az account show --query id -o tsv)"
-                SRC="/subscriptions/$SUB/resourceGroups/$RG_SOURCE/providers/Microsoft.Storage/storageAccounts/$ST"
+                SRC="/subscriptions/$SUB/resourceGroups/$(sourceStorageResourceGroup)/providers/Microsoft.Storage/storageAccounts/$(sourceStorageAccount)"
 
-                ACTIVE="evgd-iscala-archive-prod"
-                INACTIVE="evgd-iscala-archive-dev"
+                if [ "${{ parameters.targetEnv }}" = "dev" ]; then
+                  ACTIVE="evgd-iscala-archive-dev"
+                  INACTIVE="evgd-iscala-archive-prod"
+                else
+                  ACTIVE="evgd-iscala-archive-prod"
+                  INACTIVE="evgd-iscala-archive-dev"
+                fi
 
-                echo "Shared source storage: $ST"
+                echo "Shared source storage: $(sourceStorageAccount)"
                 echo "Active subscription should be: $ACTIVE"
                 echo "Removing inactive subscription if it exists: $INACTIVE"
 
@@ -962,7 +965,7 @@ stages:
               csmFile: infra/eventgrid-subscription.json
               overrideParameters: >
                 -eventSubscriptionName "$(eventSubscriptionName)"
-                -sourceResourceId "$(storageAccountResourceId)"
+                -sourceResourceId "$(sourceStorageAccountResourceId)"
                 -endpointUrl "$(functionWebhookUrl)"
                 -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
                 -deadLetterContainerName "eventgrid-deadletter"
