@@ -4,6 +4,7 @@
   "parameters": {
     "functionAppName": { "value": "fa-iscala-eg-proxy-dev" },
     "location": { "value": "swedencentral" },
-    "storageAccountName": { "value": "saiscalaegproxydev01" }
+    "storageAccountName": { "value": "saiscalaegproxydev01" },
+    "nodeDefaultVersion": { "value": "~22" }
   }
 }
