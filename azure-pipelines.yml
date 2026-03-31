@@ -95,7 +95,7 @@ variables:
 stages:
 - stage: Dev
   displayName: Deploy DEV
-  condition: and(succeeded(), eq('${{ parameters.targetEnv }}', 'dev'))
+  condition: eq('${{ parameters.targetEnv }}', 'dev')
   jobs:
   - job: DeployDev
     displayName: Deploy DEV
@@ -525,7 +525,6 @@ stages:
         deploy:
           steps:
           - checkout: self
-
           - bash: |
               set -e
               python3 -m json.tool infra/functionapp.json > /dev/null
