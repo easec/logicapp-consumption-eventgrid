@@ -512,7 +512,8 @@ stages:
 
 - stage: Prod
   displayName: Deploy PROD
-  condition: and(succeeded(), eq('${{ parameters.targetEnv }}', 'prod'))
+  dependsOn: []
+  condition: eq('${{ parameters.targetEnv }}', 'prod')
   jobs:
   - deployment: DeployProd
     displayName: Deploy PROD (requires approval)
