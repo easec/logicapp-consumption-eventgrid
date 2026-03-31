@@ -965,7 +965,7 @@ stages:
               csmFile: infra/eventgrid-subscription.json
               overrideParameters: >
                 -eventSubscriptionName "$(eventSubscriptionName)"
-                -sourceResourceId "$(sourceStorageAccountResourceId)"
+                -sourceResourceId "/subscriptions/$(subscriptionId)/resourceGroups/$(sourceStorageResourceGroup)/providers/Microsoft.Storage/storageAccounts/$(sourceStorageAccount)"
                 -endpointUrl "$(functionWebhookUrl)"
                 -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
                 -deadLetterContainerName "eventgrid-deadletter"
