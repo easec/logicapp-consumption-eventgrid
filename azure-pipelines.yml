@@ -960,7 +960,7 @@ stages:
             inputs:
               azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
               deploymentScope: Resource Group
-              resourceGroupName: $(resourceGroupName)
+              resourceGroupName: $(sourceStorageResourceGroup)
               location: $(rgLocation)
               csmFile: infra/eventgrid-subscription.json
               overrideParameters: >
