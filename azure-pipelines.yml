@@ -13,6 +13,13 @@ parameters:
   type: string
   default: Azure-Service-Connection-Sub
 
+- name: allowRuntimeUpgradeInProd
+  type: string
+  default: 'false'
+  values:
+  - 'false'
+  - 'true'
+
 variables:
 # DEV
 - ${{ if eq(parameters.targetEnv, 'dev') }}:
@@ -73,572 +80,857 @@ variables:
 - name: deploymentPrincipalObjectId
   value: 94f97b9f-b688-4f99-a3ff-64e0e8a945d8
 
+- name: targetNodeVersion
+  value: '22'
+
+- name: allowPreviewNodeInProd
+  value: 'false'
+
+- name: allowEolNode
+  value: 'false'
+
 - name: storageAccountResourceId
   value: /subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(storageAccount)
 
 stages:
-- stage: Deploy
-  displayName: Deploy ${{ parameters.targetEnv }}
+- stage: Dev
+  displayName: Deploy DEV
+  condition: and(succeeded(), eq('${{ parameters.targetEnv }}', 'dev'))
   jobs:
+  - job: DeployDev
+    displayName: Deploy DEV
+    pool:
+      name: easec-pool
+    steps:
+    - checkout: self
 
-  - ${{ if eq(parameters.targetEnv, 'dev') }}:
-    - job: DeployDev
-      displayName: Deploy DEV
-      pool:
-        name: easec-pool
-      steps:
-      - checkout: self
+    - bash: |
+        set -e
+        python3 -m json.tool infra/functionapp.json > /dev/null
+        python3 -m json.tool infra/connections.json > /dev/null
+        python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+        python3 -m json.tool infra/deadletter-container.json > /dev/null
+        python3 -m json.tool infra/eventgrid-subscription.json > /dev/null
+        python3 -m json.tool infra/keyvault.json > /dev/null
+        python3 -m json.tool logicapp/logicapp.json > /dev/null
+        python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
+        python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
+        python3 -m json.tool infra/parameters/functionapp.dev.json > /dev/null
+        python3 -m json.tool infra/parameters/functionapp.prod.json > /dev/null
+      displayName: Validate JSON templates
 
-      - bash: |
-          set -e
-          python3 -m json.tool infra/functionapp.json > /dev/null
-          python3 -m json.tool infra/connections.json > /dev/null
-          python3 -m json.tool infra/workbook-forwarding.json > /dev/null
-          python3 -m json.tool infra/deadletter-container.json > /dev/null
-          python3 -m json.tool infra/eventgrid-subscription.json > /dev/null
-          python3 -m json.tool infra/keyvault.json > /dev/null
-          python3 -m json.tool logicapp/logicapp.json > /dev/null
-          python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
-          python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
-          python3 -m json.tool infra/parameters/functionapp.dev.json > /dev/null
-          python3 -m json.tool infra/parameters/functionapp.prod.json > /dev/null
-        displayName: Validate JSON templates
+    - task: AzureCLI@2
+      displayName: Set subscriptionId variable
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
 
-      - task: AzureCLI@2
-        displayName: Set subscriptionId variable
-        inputs:
-          azureSubscription: ${{ parameters.azureServiceConnection }}
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
-            echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
+    - task: AzureCLI@2
+      displayName: HARD GUARDRAILS (dev)
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
 
-      - task: AzureCLI@2
-        displayName: HARD GUARDRAILS (dev)
-        inputs:
-          azureSubscription: ${{ parameters.azureServiceConnection }}
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
+          ENV="${{ parameters.targetEnv }}"
+          RG="$(resourceGroupName)"
+          LA="$(logicAppName)"
+          FUNC="$(functionAppName)"
+          ST="$(storageAccount)"
+          EG="$(eventSubscriptionName)"
+          KV="$(keyVaultName)"
 
-            ENV="${{ parameters.targetEnv }}"
-            RG="$(resourceGroupName)"
-            LA="$(logicAppName)"
-            FUNC="$(functionAppName)"
-            ST="$(storageAccount)"
-            EG="$(eventSubscriptionName)"
-            KV="$(keyVaultName)"
+          fail() { echo "ERROR: $*" >&2; exit 1; }
 
-            fail() { echo "ERROR: $*" >&2; exit 1; }
+          [ "$ENV" = "dev" ] || fail "Expected targetEnv=dev, got: $ENV"
+          [ "$RG" = "rg-iscala-archive-dev" ] || fail "DEV must use RG rg-iscala-archive-dev, got: $RG"
+          [ "$ST" = "stiscalasnapshotdev" ] || fail "DEV must use snapshot storage stiscalasnapshotdev, got: $ST"
+          [ "$LA" = "la-iscala-archive-dev" ] || fail "DEV must use Logic App la-iscala-archive-dev, got: $LA"
+          [ "$FUNC" = "fa-iscala-eg-proxy-dev" ] || fail "DEV must use Function fa-iscala-eg-proxy-dev, got: $FUNC"
+          [ "$EG" = "evgd-iscala-archive-dev" ] || fail "DEV must use EventSub evgd-iscala-archive-dev, got: $EG"
+          [ "$KV" = "kv-iscala-archive-dev" ] || fail "DEV must use Key Vault kv-iscala-archive-dev, got: $KV"
 
-            [ "$ENV" = "dev" ] || fail "Expected targetEnv=dev, got: $ENV"
-            [ "$RG" = "rg-iscala-archive-dev" ] || fail "DEV must use RG rg-iscala-archive-dev, got: $RG"
-            [ "$ST" = "stiscalasnapshotdev" ] || fail "DEV must use snapshot storage stiscalasnapshotdev, got: $ST"
-            [ "$LA" = "la-iscala-archive-dev" ] || fail "DEV must use Logic App la-iscala-archive-dev, got: $LA"
-            [ "$FUNC" = "fa-iscala-eg-proxy-dev" ] || fail "DEV must use Function fa-iscala-eg-proxy-dev, got: $FUNC"
-            [ "$EG" = "evgd-iscala-archive-dev" ] || fail "DEV must use EventSub evgd-iscala-archive-dev, got: $EG"
-            [ "$KV" = "kv-iscala-archive-dev" ] || fail "DEV must use Key Vault kv-iscala-archive-dev, got: $KV"
+          echo "Snapshot storage (event source / dead-letter): $ST"
+          echo "Function runtime storage is defined in infra/parameters/functionapp.dev.json"
+          echo "HARD GUARDRAILS PASSED ✅"
 
-            echo "Snapshot storage (event source / dead-letter): $ST"
-            echo "Function runtime storage is defined in infra/parameters/functionapp.dev.json"
-            echo "HARD GUARDRAILS PASSED ✅"
+    - task: AzureCLI@2
+      displayName: Validate snapshot storage exists
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az storage account show -n "$(storageAccount)" -g "$(resourceGroupName)" -o none
+          echo "Snapshot storage exists."
 
-      - task: AzureCLI@2
-        displayName: Validate snapshot storage exists
-        inputs:
-          azureSubscription: ${{ parameters.azureServiceConnection }}
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
-            az storage account show -n "$(storageAccount)" -g "$(resourceGroupName)" -o none
-            echo "Snapshot storage exists."
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Key Vault (dev)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/keyvault.json
+        overrideParameters: >
+          -keyVaultName "$(keyVaultName)"
+          -location "$(rgLocation)"
+          -deploymentPrincipalObjectId "$(deploymentPrincipalObjectId)"
+        deploymentMode: Incremental
 
-      - task: AzureResourceManagerTemplateDeployment@3
-        displayName: Deploy Key Vault (dev)
-        inputs:
-          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-          deploymentScope: Resource Group
-          resourceGroupName: $(resourceGroupName)
-          location: $(rgLocation)
-          csmFile: infra/keyvault.json
-          overrideParameters: >
-            -keyVaultName "$(keyVaultName)"
-            -location "$(rgLocation)"
-            -deploymentPrincipalObjectId "$(deploymentPrincipalObjectId)"
-          deploymentMode: Incremental
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Connections (dev)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/connections.json
+        csmParametersFile: $(connectionsParametersFile)
+        deploymentMode: Incremental
 
-      - task: AzureResourceManagerTemplateDeployment@3
-        displayName: Deploy Connections (dev)
-        inputs:
-          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-          deploymentScope: Resource Group
-          resourceGroupName: $(resourceGroupName)
-          location: $(rgLocation)
-          csmFile: infra/connections.json
-          csmParametersFile: $(connectionsParametersFile)
-          deploymentMode: Incremental
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Logic App (dev)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: logicapp/logicapp.json
+        csmParametersFile: $(logicAppParametersFile)
+        deploymentMode: Incremental
 
-      - task: AzureResourceManagerTemplateDeployment@3
-        displayName: Deploy Logic App (dev)
-        inputs:
-          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-          deploymentScope: Resource Group
-          resourceGroupName: $(resourceGroupName)
-          location: $(rgLocation)
-          csmFile: logicapp/logicapp.json
-          csmParametersFile: $(logicAppParametersFile)
-          deploymentMode: Incremental
+    - task: AzureCLI@2
+      displayName: Guardrail - validate requested Node.js version
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
 
-      - task: AzureResourceManagerTemplateDeployment@3
-        displayName: Deploy Function infra (dev)
-        inputs:
-          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-          deploymentScope: Resource Group
-          resourceGroupName: $(resourceGroupName)
-          location: $(rgLocation)
-          csmFile: infra/functionapp.json
-          csmParametersFile: $(functionAppParametersFile)
-          deploymentMode: Incremental
-          deploymentOutputs: functionOutputs
+          ENV="${{ parameters.targetEnv }}"
+          TARGET="$(targetNodeVersion)"
+          ALLOW_PREVIEW="$(allowPreviewNodeInProd)"
+          ALLOW_EOL="$(allowEolNode)"
 
-      - script: |
-          echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
-          echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
-        displayName: Set Function outputs variables
+          fail() { echo "ERROR: $*" >&2; exit 1; }
 
-      - task: AzureCLI@2
-        displayName: Grant Function access to Key Vault
-        inputs:
-          azureSubscription: ${{ parameters.azureServiceConnection }}
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
-            PRINCIPAL_ID="$(az functionapp identity show -g "$(resourceGroupName)" -n "$(functionAppName)" --query principalId -o tsv)"
-            az keyvault set-policy \
-              --name "$(keyVaultName)" \
-              --resource-group "$(resourceGroupName)" \
-              --object-id "$PRINCIPAL_ID" \
-              --secret-permissions get list
+          case "$TARGET" in
+            22)
+              echo "Node.js 22 selected: supported production choice."
+              ;;
+            24)
+              echo "Node.js 24 selected."
+              if [ "$ENV" = "prod" ] && [ "$ALLOW_PREVIEW" != "true" ]; then
+                fail "Node.js 24 is blocked in prod unless allowPreviewNodeInProd=true."
+              fi
+              ;;
+            20)
+              echo "Node.js 20 selected."
+              if [ "$ALLOW_EOL" != "true" ]; then
+                fail "Node.js 20 is blocked unless allowEolNode=true."
+              fi
+              ;;
+            *)
+              fail "Unsupported targetNodeVersion '$TARGET'. Allowed values: 20, 22, 24."
+              ;;
+          esac
 
-      - task: AzureCLI@2
-        displayName: Store Logic App callback in Key Vault -> set Function Key Vault reference
-        inputs:
-          azureSubscription: ${{ parameters.azureServiceConnection }}
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
+          echo "Node.js version guardrail passed."
 
-            RG="$(resourceGroupName)"
-            LA="$(logicAppName)"
-            TRIGGER="$(triggerName)"
-            FUNC="$(functionAppName)"
-            KV="$(keyVaultName)"
-            SUB="$(az account show --query id -o tsv)"
+    - bash: |
+        set -euo pipefail
 
-            az functionapp show -g "$RG" -n "$FUNC" -o none
-            az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
+        FILE="$(functionAppParametersFile)"
+        TARGET="$(targetNodeVersion)"
+        EXPECTED="~${TARGET}"
 
-            CALLBACK="$(az rest --method POST \
-              --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
-              --body '{}' --query "value" -o tsv)"
+        ACTUAL="$(python3 -c 'import json, os; p=os.environ["FILE"]; print(json.load(open(p))["parameters"]["nodeDefaultVersion"]["value"])')"
 
-            if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
-              echo "ERROR: Could not retrieve callback URL."
-              exit 1
-            fi
+        echo "Parameter file nodeDefaultVersion: $ACTUAL"
+        echo "Expected: $EXPECTED"
 
-            az keyvault secret set \
-              --vault-name "$KV" \
-              --name "logicapp-callback-active" \
-              --value "$CALLBACK" \
-              -o none
+        if [ "$ACTUAL" != "$EXPECTED" ]; then
+          echo "ERROR: function app parameter file version mismatch."
+          exit 1
+        fi
+      displayName: Guardrail - verify ARM parameter file matches target Node.js
+      env:
+        FILE: $(functionAppParametersFile)
 
-            SECRET_URI="$(az keyvault secret show \
-              --vault-name "$KV" \
-              --name "logicapp-callback-active" \
-              --query id -o tsv)"
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Function infra (dev)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/functionapp.json
+        csmParametersFile: $(functionAppParametersFile)
+        deploymentMode: Incremental
+        deploymentOutputs: functionOutputs
 
+    - script: |
+        echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+        echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
+      displayName: Set Function outputs variables
+
+    - task: AzureCLI@2
+      displayName: Check and update Function App Node.js version
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG="$(resourceGroupName)"
+          FUNC="$(functionAppName)"
+          TARGET_NODE="$(targetNodeVersion)"
+
+          CURRENT_RUNTIME="$(az functionapp config appsettings list \
+            -g "$RG" -n "$FUNC" \
+            --query "[?name=='FUNCTIONS_EXTENSION_VERSION'].value | [0]" -o tsv)"
+
+          CURRENT_NODE="$(az functionapp config appsettings list \
+            -g "$RG" -n "$FUNC" \
+            --query "[?name=='WEBSITE_NODE_DEFAULT_VERSION'].value | [0]" -o tsv)"
+
+          echo "FUNCTIONS_EXTENSION_VERSION: ${CURRENT_RUNTIME:-<not set>}"
+          echo "WEBSITE_NODE_DEFAULT_VERSION: ${CURRENT_NODE:-<not set>}"
+
+          if [ "$CURRENT_RUNTIME" != "~4" ]; then
+            echo "ERROR: Expected FUNCTIONS_EXTENSION_VERSION=~4"
+            exit 1
+          fi
+
+          normalize() {
+            echo "$1" | sed 's/[[:space:]]//g; s/^~//'
+          }
+
+          CURR_NORM="$(normalize "${CURRENT_NODE:-}")"
+          TGT_NORM="$(normalize "$TARGET_NODE")"
+
+          if [ "$CURR_NORM" != "$TGT_NORM" ]; then
+            echo "Updating Node.js from '${CURRENT_NODE:-<not set>}' to '~$TARGET_NODE'"
             az functionapp config appsettings set \
               -g "$RG" -n "$FUNC" \
-              --settings \
-                "LOGICAPP_CALLBACK_URL_ACTIVE=@Microsoft.KeyVault(SecretUri=$SECRET_URI)" \
-                "LOGICAPP_CALLBACK_URL_NEXT=" \
+              --settings WEBSITE_NODE_DEFAULT_VERSION="~$TARGET_NODE" \
               -o none
 
             az functionapp restart -g "$RG" -n "$FUNC" -o none
+          else
+            echo "Node.js version already correct."
+          fi
 
-            echo "Verify Key Vault reference:"
-            az functionapp config appsettings list -g "$RG" -n "$FUNC" \
-              --query "[?name=='LOGICAPP_CALLBACK_URL_ACTIVE'].{name:name,value:value}" -o table
+    - task: AzureCLI@2
+      displayName: Grant Function access to Key Vault
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          PRINCIPAL_ID="$(az functionapp identity show -g "$(resourceGroupName)" -n "$(functionAppName)" --query principalId -o tsv)"
+          az keyvault set-policy \
+            --name "$(keyVaultName)" \
+            --resource-group "$(resourceGroupName)" \
+            --object-id "$PRINCIPAL_ID" \
+            --secret-permissions get list
 
-      - task: ArchiveFiles@2
-        displayName: Zip Function code
-        inputs:
-          rootFolderOrFile: functionapp
-          includeRootFolder: false
-          archiveType: zip
-          archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
-          replaceExistingArchive: true
+    - task: AzureCLI@2
+      displayName: Store Logic App callback in Key Vault -> set Function Key Vault reference
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
 
-      - task: AzureCLI@2
-        displayName: Deploy Function package (first-deploy retry only)
-        inputs:
-          azureSubscription: ${{ parameters.azureServiceConnection }}
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
+          RG="$(resourceGroupName)"
+          LA="$(logicAppName)"
+          TRIGGER="$(triggerName)"
+          FUNC="$(functionAppName)"
+          KV="$(keyVaultName)"
+          SUB="$(az account show --query id -o tsv)"
 
-            RG="$(resourceGroupName)"
-            FUNC="$(functionAppName)"
-            ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
-            MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
+          az functionapp show -g "$RG" -n "$FUNC" -o none
+          az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
 
-            MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
-              --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
+          CALLBACK="$(az rest --method POST \
+            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+            --body '{}' --query "value" -o tsv)"
 
-            if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
-              echo "First deployment detected -> enabling warmup + retries"
-              curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+          if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+            echo "ERROR: Could not retrieve callback URL."
+            exit 1
+          fi
 
-              max=3
-              delay=5
-              for i in $(seq 1 $max); do
-                echo "ZIP deploy attempt $i/$max..."
-                if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
-                  echo "ZIP deploy accepted."
-                  break
-                fi
+          az keyvault secret set \
+            --vault-name "$KV" \
+            --name "logicapp-callback-active" \
+            --value "$CALLBACK" \
+            -o none
 
-                if [ $i -eq $max ]; then
-                  echo "ERROR: ZIP deploy failed after $max attempts."
-                  echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
+          SECRET_URI="$(az keyvault secret show \
+            --vault-name "$KV" \
+            --name "logicapp-callback-active" \
+            --query id -o tsv)"
+
+          az functionapp config appsettings set \
+            -g "$RG" -n "$FUNC" \
+            --settings \
+              "LOGICAPP_CALLBACK_URL_ACTIVE=@Microsoft.KeyVault(SecretUri=$SECRET_URI)" \
+              "LOGICAPP_CALLBACK_URL_NEXT=" \
+            -o none
+
+          az functionapp restart -g "$RG" -n "$FUNC" -o none
+
+          echo "Verify Key Vault reference:"
+          az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+            --query "[?name=='LOGICAPP_CALLBACK_URL_ACTIVE'].{name:name,value:value}" -o table
+
+    - task: ArchiveFiles@2
+      displayName: Zip Function code
+      inputs:
+        rootFolderOrFile: functionapp
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+        replaceExistingArchive: true
+
+    - task: AzureCLI@2
+      displayName: Deploy Function package (first-deploy retry only)
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG="$(resourceGroupName)"
+          FUNC="$(functionAppName)"
+          ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
+          MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
+
+          MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+            --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
+
+          if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
+            echo "First deployment detected -> enabling warmup + retries"
+            curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+
+            max=3
+            delay=5
+            for i in $(seq 1 $max); do
+              echo "ZIP deploy attempt $i/$max..."
+              if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
+                echo "ZIP deploy accepted."
+                break
+              fi
+
+              if [ $i -eq $max ]; then
+                echo "ERROR: ZIP deploy failed after $max attempts."
+                echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
+                exit 1
+              fi
+
+              echo "Retrying in ${delay}s..."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
+
+            az functionapp restart -g "$RG" -n "$FUNC" -o none
+            az functionapp config appsettings set -g "$RG" -n "$FUNC" --settings "$MARKER_NAME=true" -o none
+          else
+            echo "Not first deployment (marker=$MARKER_VAL) -> single deploy"
+            az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
+            az functionapp restart -g "$RG" -n "$FUNC" -o none
+          fi
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Ensure dead-letter container exists
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/deadletter-container.json
+        overrideParameters: >
+          -storageAccountName "$(deadLetterStorageAccountName)"
+          -containerName "eventgrid-deadletter"
+        deploymentMode: Incremental
+
+    - task: AzureCLI@2
+      displayName: Ensure only selected environment subscription is active
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG_SOURCE="rg-iscala-archive"
+          ST="snapshottestsa"
+          SUB="$(az account show --query id -o tsv)"
+          SRC="/subscriptions/$SUB/resourceGroups/$RG_SOURCE/providers/Microsoft.Storage/storageAccounts/$ST"
+
+          ACTIVE="evgd-iscala-archive-dev"
+          INACTIVE="evgd-iscala-archive-prod"
+
+          echo "Shared source storage: $ST"
+          echo "Active subscription should be: $ACTIVE"
+          echo "Removing inactive subscription if it exists: $INACTIVE"
+
+          az eventgrid event-subscription delete \
+            --name "$INACTIVE" \
+            --source-resource-id "$SRC" || true
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: Deploy Event Grid subscription (dead-letter enabled)
+      inputs:
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        deploymentScope: Resource Group
+        resourceGroupName: $(resourceGroupName)
+        location: $(rgLocation)
+        csmFile: infra/eventgrid-subscription.json
+        overrideParameters: >
+          -eventSubscriptionName "$(eventSubscriptionName)"
+          -sourceResourceId "$(storageAccountResourceId)"
+          -endpointUrl "$(functionWebhookUrl)"
+          -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
+          -deadLetterContainerName "eventgrid-deadletter"
+        deploymentMode: Incremental
+
+- stage: Prod
+  displayName: Deploy PROD
+  condition: and(succeeded(), eq('${{ parameters.targetEnv }}', 'prod'))
+  jobs:
+  - deployment: DeployProd
+    displayName: Deploy PROD (requires approval)
+    environment: iscala-archive-prod
+    pool:
+      name: easec-pool
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+
+          - bash: |
+              set -e
+              python3 -m json.tool infra/functionapp.json > /dev/null
+              python3 -m json.tool infra/connections.json > /dev/null
+              python3 -m json.tool infra/workbook-forwarding.json > /dev/null
+              python3 -m json.tool infra/deadletter-container.json > /dev/null
+              python3 -m json.tool infra/eventgrid-subscription.json > /dev/null
+              python3 -m json.tool infra/keyvault.json > /dev/null
+              python3 -m json.tool logicapp/logicapp.json > /dev/null
+              python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
+              python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
+              python3 -m json.tool infra/parameters/functionapp.dev.json > /dev/null
+              python3 -m json.tool infra/parameters/functionapp.prod.json > /dev/null
+            displayName: Validate JSON templates
+
+          - task: AzureCLI@2
+            displayName: Set subscriptionId variable
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
+
+          - task: AzureCLI@2
+            displayName: HARD GUARDRAILS (prod)
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                ENV="${{ parameters.targetEnv }}"
+                RG="$(resourceGroupName)"
+                LA="$(logicAppName)"
+                FUNC="$(functionAppName)"
+                ST="$(storageAccount)"
+                EG="$(eventSubscriptionName)"
+                KV="$(keyVaultName)"
+
+                fail() { echo "ERROR: $*" >&2; exit 1; }
+
+                [ "$ENV" = "prod" ] || fail "Expected targetEnv=prod, got: $ENV"
+                [ "$RG" = "rg-iscala-archive-prod" ] || fail "PROD must use RG rg-iscala-archive-prod, got: $RG"
+                [ "$ST" = "stiscalasnapshotprod" ] || fail "PROD must use snapshot storage stiscalasnapshotprod, got: $ST"
+                [ "$LA" = "la-iscala-archive-prod" ] || fail "PROD must use Logic App la-iscala-archive-prod, got: $LA"
+                [ "$FUNC" = "fa-iscala-eg-proxy-prod" ] || fail "PROD must use Function fa-iscala-eg-proxy-prod, got: $FUNC"
+                [ "$EG" = "evgd-iscala-archive-prod" ] || fail "PROD must use EventSub evgd-iscala-archive-prod, got: $EG"
+                [ "$KV" = "kv-iscala-archive-prod" ] || fail "PROD must use Key Vault kv-iscala-archive-prod, got: $KV"
+
+                echo "Snapshot storage (event source / dead-letter): $ST"
+                echo "Function runtime storage is defined in infra/parameters/functionapp.prod.json"
+                echo "HARD GUARDRAILS PASSED ✅"
+
+          - task: AzureCLI@2
+            displayName: Validate snapshot storage exists
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az storage account show -n "$(storageAccount)" -g "$(resourceGroupName)" -o none
+                echo "Snapshot storage exists."
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Key Vault (prod)
+            inputs:
+              azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/keyvault.json
+              overrideParameters: >
+                -keyVaultName "$(keyVaultName)"
+                -location "$(rgLocation)"
+                -deploymentPrincipalObjectId "$(deploymentPrincipalObjectId)"
+              deploymentMode: Incremental
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Connections (prod)
+            inputs:
+              azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/connections.json
+              csmParametersFile: $(connectionsParametersFile)
+              deploymentMode: Incremental
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Logic App (prod)
+            inputs:
+              azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: logicapp/logicapp.json
+              csmParametersFile: $(logicAppParametersFile)
+              deploymentMode: Incremental
+
+          - task: AzureCLI@2
+            displayName: Guardrail - validate requested Node.js version
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                ENV="${{ parameters.targetEnv }}"
+                TARGET="$(targetNodeVersion)"
+                ALLOW_PREVIEW="$(allowPreviewNodeInProd)"
+                ALLOW_EOL="$(allowEolNode)"
+
+                fail() { echo "ERROR: $*" >&2; exit 1; }
+
+                case "$TARGET" in
+                  22)
+                    echo "Node.js 22 selected: supported production choice."
+                    ;;
+                  24)
+                    echo "Node.js 24 selected."
+                    if [ "$ENV" = "prod" ] && [ "$ALLOW_PREVIEW" != "true" ]; then
+                      fail "Node.js 24 is blocked in prod unless allowPreviewNodeInProd=true."
+                    fi
+                    ;;
+                  20)
+                    echo "Node.js 20 selected."
+                    if [ "$ALLOW_EOL" != "true" ]; then
+                      fail "Node.js 20 is blocked unless allowEolNode=true."
+                    fi
+                    ;;
+                  *)
+                    fail "Unsupported targetNodeVersion '$TARGET'. Allowed values: 20, 22, 24."
+                    ;;
+                esac
+
+                echo "Node.js version guardrail passed."
+
+          - bash: |
+              set -euo pipefail
+
+              FILE="$(functionAppParametersFile)"
+              TARGET="$(targetNodeVersion)"
+              EXPECTED="~${TARGET}"
+
+              ACTUAL="$(python3 -c 'import json, os; p=os.environ["FILE"]; print(json.load(open(p))["parameters"]["nodeDefaultVersion"]["value"])')"
+
+              echo "Parameter file nodeDefaultVersion: $ACTUAL"
+              echo "Expected: $EXPECTED"
+
+              if [ "$ACTUAL" != "$EXPECTED" ]; then
+                echo "ERROR: function app parameter file version mismatch."
+                exit 1
+              fi
+            displayName: Guardrail - verify ARM parameter file matches target Node.js
+            env:
+              FILE: $(functionAppParametersFile)
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Function infra (prod)
+            inputs:
+              azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/functionapp.json
+              csmParametersFile: $(functionAppParametersFile)
+              deploymentMode: Incremental
+              deploymentOutputs: functionOutputs
+
+          - script: |
+              echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
+              echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
+            displayName: Set Function outputs variables
+
+          - task: AzureCLI@2
+            displayName: Check and update Function App Node.js version
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                RG="$(resourceGroupName)"
+                FUNC="$(functionAppName)"
+                TARGET_NODE="$(targetNodeVersion)"
+                ALLOW_PROD_UPGRADE="${{ parameters.allowRuntimeUpgradeInProd }}"
+
+                CURRENT_RUNTIME="$(az functionapp config appsettings list \
+                  -g "$RG" -n "$FUNC" \
+                  --query "[?name=='FUNCTIONS_EXTENSION_VERSION'].value | [0]" -o tsv)"
+
+                CURRENT_NODE="$(az functionapp config appsettings list \
+                  -g "$RG" -n "$FUNC" \
+                  --query "[?name=='WEBSITE_NODE_DEFAULT_VERSION'].value | [0]" -o tsv)"
+
+                echo "FUNCTIONS_EXTENSION_VERSION: ${CURRENT_RUNTIME:-<not set>}"
+                echo "WEBSITE_NODE_DEFAULT_VERSION: ${CURRENT_NODE:-<not set>}"
+
+                if [ "$CURRENT_RUNTIME" != "~4" ]; then
+                  echo "ERROR: Expected FUNCTIONS_EXTENSION_VERSION=~4"
                   exit 1
                 fi
 
-                echo "Retrying in ${delay}s..."
-                sleep "$delay"
-                delay=$((delay * 2))
-              done
+                normalize() {
+                  echo "$1" | sed 's/[[:space:]]//g; s/^~//'
+                }
 
-              az functionapp restart -g "$RG" -n "$FUNC" -o none
-              az functionapp config appsettings set -g "$RG" -n "$FUNC" --settings "$MARKER_NAME=true" -o none
-            else
-              echo "Not first deployment (marker=$MARKER_VAL) -> single deploy"
-              az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
-              az functionapp restart -g "$RG" -n "$FUNC" -o none
-            fi
+                CURR_NORM="$(normalize "${CURRENT_NODE:-}")"
+                TGT_NORM="$(normalize "$TARGET_NODE")"
 
-      - task: AzureResourceManagerTemplateDeployment@3
-        displayName: Ensure dead-letter container exists
-        inputs:
-          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-          deploymentScope: Resource Group
-          resourceGroupName: $(resourceGroupName)
-          location: $(rgLocation)
-          csmFile: infra/deadletter-container.json
-          overrideParameters: >
-            -storageAccountName "$(deadLetterStorageAccountName)"
-            -containerName "eventgrid-deadletter"
-          deploymentMode: Incremental
-
-      - task: AzureResourceManagerTemplateDeployment@3
-        displayName: Deploy Event Grid subscription (dead-letter enabled)
-        inputs:
-          azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-          deploymentScope: Resource Group
-          resourceGroupName: $(resourceGroupName)
-          location: $(rgLocation)
-          csmFile: infra/eventgrid-subscription.json
-          overrideParameters: >
-            -eventSubscriptionName "$(eventSubscriptionName)"
-            -sourceResourceId "$(storageAccountResourceId)"
-            -endpointUrl "$(functionWebhookUrl)"
-            -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
-            -deadLetterContainerName "eventgrid-deadletter"
-          deploymentMode: Incremental
-
-  - ${{ if eq(parameters.targetEnv, 'prod') }}:
-    - deployment: DeployProd
-      displayName: Deploy PROD (requires approval)
-      environment: iscala-archive-prod
-      pool:
-        name: easec-pool
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-            - checkout: self
-
-            - bash: |
-                set -e
-                python3 -m json.tool infra/functionapp.json > /dev/null
-                python3 -m json.tool infra/connections.json > /dev/null
-                python3 -m json.tool infra/workbook-forwarding.json > /dev/null
-                python3 -m json.tool infra/deadletter-container.json > /dev/null
-                python3 -m json.tool infra/eventgrid-subscription.json > /dev/null
-                python3 -m json.tool infra/keyvault.json > /dev/null
-                python3 -m json.tool logicapp/logicapp.json > /dev/null
-                python3 -m json.tool infra/parameters/logicapp.dev.json > /dev/null
-                python3 -m json.tool infra/parameters/logicapp.prod.json > /dev/null
-                python3 -m json.tool infra/parameters/functionapp.dev.json > /dev/null
-                python3 -m json.tool infra/parameters/functionapp.prod.json > /dev/null
-              displayName: Validate JSON templates
-
-            - task: AzureCLI@2
-              displayName: Set subscriptionId variable
-              inputs:
-                azureSubscription: ${{ parameters.azureServiceConnection }}
-                scriptType: bash
-                scriptLocation: inlineScript
-                inlineScript: |
-                  set -euo pipefail
-                  echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
-
-            - task: AzureCLI@2
-              displayName: HARD GUARDRAILS (prod)
-              inputs:
-                azureSubscription: ${{ parameters.azureServiceConnection }}
-                scriptType: bash
-                scriptLocation: inlineScript
-                inlineScript: |
-                  set -euo pipefail
-
-                  ENV="${{ parameters.targetEnv }}"
-                  RG="$(resourceGroupName)"
-                  LA="$(logicAppName)"
-                  FUNC="$(functionAppName)"
-                  ST="$(storageAccount)"
-                  EG="$(eventSubscriptionName)"
-                  KV="$(keyVaultName)"
-
-                  fail() { echo "ERROR: $*" >&2; exit 1; }
-
-                  [ "$ENV" = "prod" ] || fail "Expected targetEnv=prod, got: $ENV"
-                  [ "$RG" = "rg-iscala-archive-prod" ] || fail "PROD must use RG rg-iscala-archive-prod, got: $RG"
-                  [ "$ST" = "stiscalasnapshotprod" ] || fail "PROD must use snapshot storage stiscalasnapshotprod, got: $ST"
-                  [ "$LA" = "la-iscala-archive-prod" ] || fail "PROD must use Logic App la-iscala-archive-prod, got: $LA"
-                  [ "$FUNC" = "fa-iscala-eg-proxy-prod" ] || fail "PROD must use Function fa-iscala-eg-proxy-prod, got: $FUNC"
-                  [ "$EG" = "evgd-iscala-archive-prod" ] || fail "PROD must use EventSub evgd-iscala-archive-prod, got: $EG"
-                  [ "$KV" = "kv-iscala-archive-prod" ] || fail "PROD must use Key Vault kv-iscala-archive-prod, got: $KV"
-
-                  echo "Snapshot storage (event source / dead-letter): $ST"
-                  echo "Function runtime storage is defined in infra/parameters/functionapp.prod.json"
-                  echo "HARD GUARDRAILS PASSED ✅"
-
-            - task: AzureCLI@2
-              displayName: Validate snapshot storage exists
-              inputs:
-                azureSubscription: ${{ parameters.azureServiceConnection }}
-                scriptType: bash
-                scriptLocation: inlineScript
-                inlineScript: |
-                  set -euo pipefail
-                  az storage account show -n "$(storageAccount)" -g "$(resourceGroupName)" -o none
-                  echo "Snapshot storage exists."
-
-            - task: AzureResourceManagerTemplateDeployment@3
-              displayName: Deploy Key Vault (prod)
-              inputs:
-                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-                deploymentScope: Resource Group
-                resourceGroupName: $(resourceGroupName)
-                location: $(rgLocation)
-                csmFile: infra/keyvault.json
-                overrideParameters: >
-                  -keyVaultName "$(keyVaultName)"
-                  -location "$(rgLocation)"
-                  -deploymentPrincipalObjectId "$(deploymentPrincipalObjectId)"
-                deploymentMode: Incremental
-
-            - task: AzureResourceManagerTemplateDeployment@3
-              displayName: Deploy Connections (prod)
-              inputs:
-                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-                deploymentScope: Resource Group
-                resourceGroupName: $(resourceGroupName)
-                location: $(rgLocation)
-                csmFile: infra/connections.json
-                csmParametersFile: $(connectionsParametersFile)
-                deploymentMode: Incremental
-
-            - task: AzureResourceManagerTemplateDeployment@3
-              displayName: Deploy Logic App (prod)
-              inputs:
-                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-                deploymentScope: Resource Group
-                resourceGroupName: $(resourceGroupName)
-                location: $(rgLocation)
-                csmFile: logicapp/logicapp.json
-                csmParametersFile: $(logicAppParametersFile)
-                deploymentMode: Incremental
-
-            - task: AzureResourceManagerTemplateDeployment@3
-              displayName: Deploy Function infra (prod)
-              inputs:
-                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-                deploymentScope: Resource Group
-                resourceGroupName: $(resourceGroupName)
-                location: $(rgLocation)
-                csmFile: infra/functionapp.json
-                csmParametersFile: $(functionAppParametersFile)
-                deploymentMode: Incremental
-                deploymentOutputs: functionOutputs
-
-            - script: |
-                echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
-                echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
-              displayName: Set Function outputs variables
-
-            - task: AzureCLI@2
-              displayName: Grant Function access to Key Vault
-              inputs:
-                azureSubscription: ${{ parameters.azureServiceConnection }}
-                scriptType: bash
-                scriptLocation: inlineScript
-                inlineScript: |
-                  set -euo pipefail
-                  PRINCIPAL_ID="$(az functionapp identity show -g "$(resourceGroupName)" -n "$(functionAppName)" --query principalId -o tsv)"
-                  az keyvault set-policy \
-                    --name "$(keyVaultName)" \
-                    --resource-group "$(resourceGroupName)" \
-                    --object-id "$PRINCIPAL_ID" \
-                    --secret-permissions get list
-
-            - task: AzureCLI@2
-              displayName: Store Logic App callback in Key Vault -> set Function Key Vault reference
-              inputs:
-                azureSubscription: ${{ parameters.azureServiceConnection }}
-                scriptType: bash
-                scriptLocation: inlineScript
-                inlineScript: |
-                  set -euo pipefail
-
-                  RG="$(resourceGroupName)"
-                  LA="$(logicAppName)"
-                  TRIGGER="$(triggerName)"
-                  FUNC="$(functionAppName)"
-                  KV="$(keyVaultName)"
-                  SUB="$(az account show --query id -o tsv)"
-
-                  az functionapp show -g "$RG" -n "$FUNC" -o none
-                  az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
-
-                  CALLBACK="$(az rest --method POST \
-                    --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
-                    --body '{}' --query "value" -o tsv)"
-
-                  if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
-                    echo "ERROR: Could not retrieve callback URL."
+                if [ "$ALLOW_PROD_UPGRADE" != "true" ]; then
+                  echo "Prod auto-upgrade disabled."
+                  if [ "$CURR_NORM" != "$TGT_NORM" ]; then
+                    echo "ERROR: Prod Node version is '$CURRENT_NODE' but expected '~$TARGET_NODE'"
                     exit 1
                   fi
+                  exit 0
+                fi
 
-                  az keyvault secret set \
-                    --vault-name "$KV" \
-                    --name "logicapp-callback-active" \
-                    --value "$CALLBACK" \
-                    -o none
-
-                  SECRET_URI="$(az keyvault secret show \
-                    --vault-name "$KV" \
-                    --name "logicapp-callback-active" \
-                    --query id -o tsv)"
-
+                if [ "$CURR_NORM" != "$TGT_NORM" ]; then
+                  echo "Updating Node.js from '${CURRENT_NODE:-<not set>}' to '~$TARGET_NODE'"
                   az functionapp config appsettings set \
                     -g "$RG" -n "$FUNC" \
-                    --settings \
-                      "LOGICAPP_CALLBACK_URL_ACTIVE=@Microsoft.KeyVault(SecretUri=$SECRET_URI)" \
-                      "LOGICAPP_CALLBACK_URL_NEXT=" \
+                    --settings WEBSITE_NODE_DEFAULT_VERSION="~$TARGET_NODE" \
                     -o none
 
                   az functionapp restart -g "$RG" -n "$FUNC" -o none
+                else
+                  echo "Node.js version already correct."
+                fi
 
-            - task: ArchiveFiles@2
-              displayName: Zip Function code
-              inputs:
-                rootFolderOrFile: functionapp
-                includeRootFolder: false
-                archiveType: zip
-                archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
-                replaceExistingArchive: true
+          - task: AzureCLI@2
+            displayName: Grant Function access to Key Vault
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                PRINCIPAL_ID="$(az functionapp identity show -g "$(resourceGroupName)" -n "$(functionAppName)" --query principalId -o tsv)"
+                az keyvault set-policy \
+                  --name "$(keyVaultName)" \
+                  --resource-group "$(resourceGroupName)" \
+                  --object-id "$PRINCIPAL_ID" \
+                  --secret-permissions get list
 
-            - task: AzureCLI@2
-              displayName: Deploy Function package (first-deploy retry only)
-              inputs:
-                azureSubscription: ${{ parameters.azureServiceConnection }}
-                scriptType: bash
-                scriptLocation: inlineScript
-                inlineScript: |
-                  set -euo pipefail
+          - task: AzureCLI@2
+            displayName: Store Logic App callback in Key Vault -> set Function Key Vault reference
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
 
-                  RG="$(resourceGroupName)"
-                  FUNC="$(functionAppName)"
-                  ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
-                  MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
+                RG="$(resourceGroupName)"
+                LA="$(logicAppName)"
+                TRIGGER="$(triggerName)"
+                FUNC="$(functionAppName)"
+                KV="$(keyVaultName)"
+                SUB="$(az account show --query id -o tsv)"
 
-                  MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
-                    --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
+                az functionapp show -g "$RG" -n "$FUNC" -o none
+                az resource show -g "$RG" -n "$LA" --resource-type Microsoft.Logic/workflows -o none
 
-                  if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
-                    echo "First deployment detected -> enabling warmup + retries"
-                    curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+                CALLBACK="$(az rest --method POST \
+                  --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Logic/workflows/$LA/triggers/$TRIGGER/listCallbackUrl?api-version=2019-05-01" \
+                  --body '{}' --query "value" -o tsv)"
 
-                    max=3
-                    delay=5
-                    for i in $(seq 1 $max); do
-                      echo "ZIP deploy attempt $i/$max..."
-                      if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
-                        echo "ZIP deploy accepted."
-                        break
-                      fi
-                      if [ $i -eq $max ]; then
-                        echo "ERROR: ZIP deploy failed after $max attempts."
-                        echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
-                        exit 1
-                      fi
-                      echo "Retrying in ${delay}s..."
-                      sleep "$delay"
-                      delay=$((delay * 2))
-                    done
+                if [ -z "$CALLBACK" ] || [ "$CALLBACK" = "null" ]; then
+                  echo "ERROR: Could not retrieve callback URL."
+                  exit 1
+                fi
 
-                    az functionapp restart -g "$RG" -n "$FUNC" -o none
-                    az functionapp config appsettings set -g "$RG" -n "$FUNC" --settings "$MARKER_NAME=true" -o none
-                  else
-                    echo "Not first deployment (marker=$MARKER_VAL) -> single deploy"
-                    az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
-                    az functionapp restart -g "$RG" -n "$FUNC" -o none
-                  fi
+                az keyvault secret set \
+                  --vault-name "$KV" \
+                  --name "logicapp-callback-active" \
+                  --value "$CALLBACK" \
+                  -o none
 
-            - task: AzureResourceManagerTemplateDeployment@3
-              displayName: Ensure dead-letter container exists
-              inputs:
-                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-                deploymentScope: Resource Group
-                resourceGroupName: $(resourceGroupName)
-                location: $(rgLocation)
-                csmFile: infra/deadletter-container.json
-                overrideParameters: >
-                  -storageAccountName "$(deadLetterStorageAccountName)"
-                  -containerName "eventgrid-deadletter"
-                deploymentMode: Incremental
+                SECRET_URI="$(az keyvault secret show \
+                  --vault-name "$KV" \
+                  --name "logicapp-callback-active" \
+                  --query id -o tsv)"
 
-            - task: AzureResourceManagerTemplateDeployment@3
-              displayName: Deploy Event Grid subscription (dead-letter enabled)
-              inputs:
-                azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
-                deploymentScope: Resource Group
-                resourceGroupName: $(resourceGroupName)
-                location: $(rgLocation)
-                csmFile: infra/eventgrid-subscription.json
-                overrideParameters: >
-                  -eventSubscriptionName "$(eventSubscriptionName)"
-                  -sourceResourceId "$(storageAccountResourceId)"
-                  -endpointUrl "$(functionWebhookUrl)"
-                  -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
-                  -deadLetterContainerName "eventgrid-deadletter"
-                deploymentMode: Incremental
+                az functionapp config appsettings set \
+                  -g "$RG" -n "$FUNC" \
+                  --settings \
+                    "LOGICAPP_CALLBACK_URL_ACTIVE=@Microsoft.KeyVault(SecretUri=$SECRET_URI)" \
+                    "LOGICAPP_CALLBACK_URL_NEXT=" \
+                  -o none
+
+                az functionapp restart -g "$RG" -n "$FUNC" -o none
+
+          - task: ArchiveFiles@2
+            displayName: Zip Function code
+            inputs:
+              rootFolderOrFile: functionapp
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/functionapp.zip
+              replaceExistingArchive: true
+
+          - task: AzureCLI@2
+            displayName: Deploy Function package (first-deploy retry only)
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                RG="$(resourceGroupName)"
+                FUNC="$(functionAppName)"
+                ZIP="$(Build.ArtifactStagingDirectory)/functionapp.zip"
+                MARKER_NAME="ISCALA_FIRST_DEPLOY_DONE"
+
+                MARKER_VAL="$(az functionapp config appsettings list -g "$RG" -n "$FUNC" \
+                  --query "[?name=='$MARKER_NAME'].value | [0]" -o tsv || true)"
+
+                if [ -z "$MARKER_VAL" ] || [ "$MARKER_VAL" = "null" ]; then
+                  echo "First deployment detected -> enabling warmup + retries"
+                  curl -sS "https://${FUNC}.scm.azurewebsites.net/api/settings" >/dev/null || true
+
+                  max=3
+                  delay=5
+                  for i in $(seq 1 $max); do
+                    echo "ZIP deploy attempt $i/$max..."
+                    if az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none; then
+                      echo "ZIP deploy accepted."
+                      break
+                    fi
+                    if [ $i -eq $max ]; then
+                      echo "ERROR: ZIP deploy failed after $max attempts."
+                      echo "Tip: az webapp log deployment show -n $FUNC -g $RG -o jsonc"
+                      exit 1
+                    fi
+                    echo "Retrying in ${delay}s..."
+                    sleep "$delay"
+                    delay=$((delay * 2))
+                  done
+
+                  az functionapp restart -g "$RG" -n "$FUNC" -o none
+                  az functionapp config appsettings set -g "$RG" -n "$FUNC" --settings "$MARKER_NAME=true" -o none
+                else
+                  echo "Not first deployment (marker=$MARKER_VAL) -> single deploy"
+                  az functionapp deployment source config-zip -g "$RG" -n "$FUNC" --src "$ZIP" -o none
+                  az functionapp restart -g "$RG" -n "$FUNC" -o none
+                fi
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Ensure dead-letter container exists
+            inputs:
+              azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/deadletter-container.json
+              overrideParameters: >
+                -storageAccountName "$(deadLetterStorageAccountName)"
+                -containerName "eventgrid-deadletter"
+              deploymentMode: Incremental
+
+          - task: AzureCLI@2
+            displayName: Ensure only selected environment subscription is active
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                RG_SOURCE="rg-iscala-archive"
+                ST="snapshottestsa"
+                SUB="$(az account show --query id -o tsv)"
+                SRC="/subscriptions/$SUB/resourceGroups/$RG_SOURCE/providers/Microsoft.Storage/storageAccounts/$ST"
+
+                ACTIVE="evgd-iscala-archive-prod"
+                INACTIVE="evgd-iscala-archive-dev"
+
+                echo "Shared source storage: $ST"
+                echo "Active subscription should be: $ACTIVE"
+                echo "Removing inactive subscription if it exists: $INACTIVE"
+
+                az eventgrid event-subscription delete \
+                  --name "$INACTIVE" \
+                  --source-resource-id "$SRC" || true
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Deploy Event Grid subscription (dead-letter enabled)
+            inputs:
+              azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+              deploymentScope: Resource Group
+              resourceGroupName: $(resourceGroupName)
+              location: $(rgLocation)
+              csmFile: infra/eventgrid-subscription.json
+              overrideParameters: >
+                -eventSubscriptionName "$(eventSubscriptionName)"
+                -sourceResourceId "$(storageAccountResourceId)"
+                -endpointUrl "$(functionWebhookUrl)"
+                -deadLetterStorageAccountId "/subscriptions/$(subscriptionId)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Storage/storageAccounts/$(deadLetterStorageAccountName)"
+                -deadLetterContainerName "eventgrid-deadletter"
+              deploymentMode: Incremental
