@@ -177,13 +177,30 @@ stages:
           [ "$EG" = "evgd-iscala-archive-dev" ] || fail "DEV must use EventSub evgd-iscala-archive-dev, got: $EG"
           [ "$KV" = "kv-iscala-archive-dev" ] || fail "DEV must use Key Vault kv-iscala-archive-dev, got: $KV"
 
+          CONN_NAME="conn-iscala-archive-o365-dev"
 
+          echo "Checking Office 365 connection: $CONN_NAME"
+
+          STATUS="$(az resource show \
+            --resource-group "$RG" \
+            --name "$CONN_NAME" \
+            --resource-type Microsoft.Web/connections \
+            --api-version 2016-06-01 \
+            --query "properties.statuses[0].status" \
+            -o tsv 2>/dev/null || true)"
+
+          [ -n "$STATUS" ] || fail "Office 365 connection not found: $CONN_NAME"
+          [ "$STATUS" = "Connected" ] || fail "Office 365 connection is not Connected (status=$STATUS)"
+
+          
+
+          echo "Office 365 connection is Connected"
           echo "Snapshot storage (event source / dead-letter): $ST"
           echo "Environment storage: $ST"
           echo "Shared source storage: $(sourceStorageAccount)"
           echo "Shared source container: $(sourceContainer)"
           echo "Function runtime storage is defined in infra/parameters/functionapp.dev.json"
-          echo "HARD GUARDRAILS PASSED ✅"
+          echo "HARD GUARDRAILS PASSED"
 
 
     - task: AzureCLI@2
@@ -610,9 +627,26 @@ stages:
                 [ "$EG" = "evgd-iscala-archive-prod" ] || fail "PROD must use EventSub evgd-iscala-archive-prod, got: $EG"
                 [ "$KV" = "kv-iscala-archive-prod" ] || fail "PROD must use Key Vault kv-iscala-archive-prod, got: $KV"
 
+                CONN_NAME="conn-iscala-archive-o365-prod"
+
+                echo "Checking Office 365 connection: $CONN_NAME"
+
+                STATUS="$(az resource show \
+                  --resource-group "$RG" \
+                  --name "$CONN_NAME" \
+                  --resource-type Microsoft.Web/connections \
+                  --api-version 2016-06-01 \
+                  --query "properties.statuses[0].status" \
+                  -o tsv 2>/dev/null || true)"
+
+                [ -n "$STATUS" ] || fail "Office 365 connection not found: $CONN_NAME"
+                [ "$STATUS" = "Connected" ] || fail "Office 365 connection is not Connected (status=$STATUS)"
+
+                
+                echo "Office 365 connection is Connected"
                 echo "Snapshot storage (event source / dead-letter): $ST"
                 echo "Function runtime storage is defined in infra/parameters/functionapp.prod.json"
-                echo "HARD GUARDRAILS PASSED ✅"
+                echo "HARD GUARDRAILS PASSED"
 
           - task: AzureCLI@2
             displayName: Validate snapshot storage exists
