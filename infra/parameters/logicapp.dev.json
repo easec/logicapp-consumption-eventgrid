@@ -4,7 +4,7 @@
   "parameters": {
     "logicAppName": { "value": "la-iscala-archive-dev" },
     "location": { "value": "swedencentral" },
-    "emailTo": { "value": "mats.johannesson@easec.se" },
+    "emailTo": { "value": "mats.johannesson@easec.se;support@iver.se" },
     "$connections": {
       "value": {
         "office365": {
