@@ -236,7 +236,7 @@
                             "path": "/v2/Mail",
                             "body": {
                               "To": "@parameters('emailTo')",
-                              "Subject": "Rehydration finished (Hot tier)",
+                              "Subject": "Rehydration finished (Hot tier) ready",
                               "Body": "<p><strong>Rehydration process finished.</strong></p><p><strong>Blob:</strong> @{outputs('NormalizedEvent')?['subject']}</p><p><strong>Previous tier:</strong> @{outputs('NormalizedEvent')?['data']?['previousTier']}</p><p><strong>Current tier:</strong> @{outputs('NormalizedEvent')?['data']?['accessTier']}</p><p><strong>URL:</strong> @{outputs('NormalizedEvent')?['data']?['url']}</p><p>Ready for the next step.</p>",
                               "Importance": "Normal"
                             }
