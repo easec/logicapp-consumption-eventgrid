@@ -682,6 +682,7 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
+                RG: "$(resourceGroupName)"
                 CONN_NAME="conn-iscala-archive-o365-prod"
                 echo "Checking Office 365 connection: $CONN_NAME"
 
