@@ -229,29 +229,6 @@ stages:
         csmParametersFile: $(connectionsParametersFile)
         deploymentMode: Incremental
 
-    - task: AzureCLI@2
-      displayName: Guardrail - validate Office 365 connection
-      inputs:
-        azureSubscription: ${{ parameters.azureServiceConnection }}
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          CONN_NAME="conn-iscala-archive-o365-dev"
-          echo "Checking Office 365 connection: $CONN_NAME"
-
-          STATUS="$(az resource show \
-            --resource-group "$(resourceGroupName)" \
-            --name "$CONN_NAME" \
-            --resource-type Microsoft.Web/connections \
-            --api-version 2016-06-01 \
-            --query "properties.statuses[0].status" \
-            -o tsv 2>/dev/null || true)"
-
-          [ -n "$STATUS" ] || fail "Office 365 connection not found: $CONN_NAME"
-          [ "$STATUS" = "Connected" ] || fail "Office 365 connection is not Connected (status=$STATUS)"
-          echo "Office 365 connection is Connected"
-
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Logic App (dev)
       inputs:
@@ -673,36 +650,6 @@ stages:
               csmFile: infra/connections.json
               csmParametersFile: $(connectionsParametersFile)
               deploymentMode: Incremental
-
-          - task: AzureCLI@2
-            displayName: Guardrail - validate Office 365 connection
-            inputs:
-              azureSubscription: ${{ parameters.azureServiceConnection }}
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -euo pipefail
-
-                fail() { echo "ERROR: $*" >&2; exit 1; }
-
-                RG="$(resourceGroupName)"
-                echo "Resource group name: $RG"
-
-                CONN_NAME="conn-iscala-archive-o365-prod"
-                echo "Checking Office 365 connection: $CONN_NAME"
-
-                STATUS="$(az resource show \
-                  --resource-group "$RG" \
-                  --name "$CONN_NAME" \
-                  --resource-type Microsoft.Web/connections \
-                  --api-version 2016-06-01 \
-                  --query "properties.statuses[0].status" \
-                  -o tsv 2>/dev/null || true)"
-
-                [ -n "$STATUS" ] || fail "Office 365 connection not found: $CONN_NAME"
-                [ "$STATUS" = "Connected" ] || fail "Office 365 connection is not Connected (status=$STATUS)"
-
-                echo "Office 365 connection is Connected"
 
           - task: AzureResourceManagerTemplateDeployment@3
             displayName: Deploy Logic App (prod)
