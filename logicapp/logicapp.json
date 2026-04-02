@@ -156,7 +156,7 @@
                             "path": "/v2/Mail",
                             "body": {
                               "To": "@parameters('emailTo')",
-                              "Subject": "[C:QUITEC] [BlobCreated] [ASSIGNEDTO:CD - CD - Operations Västerås [ispublic=0] - Rehydration process finished",
+                              "Subject": "[C:QUITEC] [BlobCreated] [ASSIGNEDTO:CD - CD - Operations Västerås [ispublic=0] - [BlobCreated] Rehydration process finished",
                               "Body": "<p><strong>Rehydration process finished.</strong></p><p><strong>Blob:</strong> @{outputs('NormalizedEvent')?['subject']}</p><p><strong>Current tier:</strong> @{outputs('NormalizedEvent')?['data']?['accessTier']}</p><p><strong>URL:</strong> @{outputs('NormalizedEvent')?['data']?['url']}</p><p>Ready for the next step. This message is only a test!</p>",
                               "Importance": "Normal"
                             }
@@ -284,7 +284,7 @@
                             "path": "/v2/Mail",
                             "body": {
                               "To": "@parameters('emailTo')",
-                              "Subject": "[C:QUITEC] [BlobTierChanged] [ASSIGNEDTO:CD - CD - Operations Västerås [ispublic=0] - Rehydration process finished",
+                              "Subject": "[C:QUITEC] [BlobTierChanged] [ASSIGNEDTO:CD - CD - Operations Västerås [ispublic=0] - [BlobTierChanged] Rehydration process finishedRehydration process finished",
                               "Body": "<p><strong>Rehydration process finished.</strong></p><p><strong>Blob:</strong> @{outputs('NormalizedEvent')?['subject']}</p><p><strong>Previous tier:</strong> @{outputs('NormalizedEvent')?['data']?['previousTier']}</p><p><strong>Current tier:</strong> @{outputs('NormalizedEvent')?['data']?['accessTier']}</p><p><strong>URL:</strong> @{outputs('NormalizedEvent')?['data']?['url']}</p><p>Ready for the next step. This message is only a test!</p>",
                               "Importance": "Normal"
                             }
