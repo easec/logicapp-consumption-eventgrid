@@ -119,10 +119,58 @@
                         }
                       }
                     },
+                    "Is_Hot_Tier_And_Not_Preflight_BlobCreated": {
+                      "type": "If",
+                      "runAfter": {
+                        "Validate_Storage_Fields_BlobCreated": [ "Succeeded" ]
+                      },
+                      "expression": {
+                        "and": [
+                          {
+                            "equals": [
+                              "@coalesce(outputs('NormalizedEvent')?['data']?['accessTier'], '')",
+                              "Hot"
+                            ]
+                          },
+                          {
+                            "not": {
+                              "equals": [
+                                "@toLower(string(coalesce(outputs('NormalizedEvent')?['data']?['isPreflight'], 'false')))",
+                                "true"
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "actions": {
+                        "Send_an_email_(V2)_BlobCreated": {
+                          "type": "ApiConnection",
+                          "runAfter": {},
+                          "inputs": {
+                            "host": {
+                              "connection": {
+                                "name": "@parameters('$connections')['office365']['connectionId']"
+                              }
+                            },
+                            "method": "post",
+                            "path": "/v2/Mail",
+                            "body": {
+                              "To": "@parameters('emailTo')",
+                              "Subject": "[C:QUITEC] [BlobCreated] [ASSIGNEDTO:CD - CD - Operations Västerås [ispublic=0] - Rehydration process finished",
+                              "Body": "<p><strong>Rehydration process finished.</strong></p><p><strong>Blob:</strong> @{outputs('NormalizedEvent')?['subject']}</p><p><strong>Current tier:</strong> @{outputs('NormalizedEvent')?['data']?['accessTier']}</p><p><strong>URL:</strong> @{outputs('NormalizedEvent')?['data']?['url']}</p><p>Ready for the next step. This message is only a test!</p>",
+                              "Importance": "Normal"
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "actions": {}
+                      }
+                    },
                     "Return_OK_BlobCreated": {
                       "type": "Response",
                       "runAfter": {
-                        "Validate_Storage_Fields_BlobCreated": [ "Succeeded" ]
+                        "Is_Hot_Tier_And_Not_Preflight_BlobCreated": [ "Succeeded", "Skipped", "Failed", "TimedOut" ]
                       },
                       "inputs": {
                         "statusCode": 200,
@@ -236,7 +284,7 @@
                             "path": "/v2/Mail",
                             "body": {
                               "To": "@parameters('emailTo')",
-                              "Subject": "[C:QUITEC] [ASSIGNEDTO:CD - CD - Operations Västerås [ispublic=0] - Rehydration process finished",
+                              "Subject": "[C:QUITEC] [BlobTierChanged] [ASSIGNEDTO:CD - CD - Operations Västerås [ispublic=0] - Rehydration process finished",
                               "Body": "<p><strong>Rehydration process finished.</strong></p><p><strong>Blob:</strong> @{outputs('NormalizedEvent')?['subject']}</p><p><strong>Previous tier:</strong> @{outputs('NormalizedEvent')?['data']?['previousTier']}</p><p><strong>Current tier:</strong> @{outputs('NormalizedEvent')?['data']?['accessTier']}</p><p><strong>URL:</strong> @{outputs('NormalizedEvent')?['data']?['url']}</p><p>Ready for the next step. This message is only a test!</p>",
                               "Importance": "Normal"
                             }
