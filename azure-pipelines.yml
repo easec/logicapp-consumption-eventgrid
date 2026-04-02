@@ -241,7 +241,7 @@ stages:
           echo "Checking Office 365 connection: $CONN_NAME"
 
           STATUS="$(az resource show \
-            --resource-group "$RG" \
+            --resource-group "$(resourceGroupName)" \
             --name "$CONN_NAME" \
             --resource-type Microsoft.Web/connections \
             --api-version 2016-06-01 \
