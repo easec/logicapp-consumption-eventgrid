@@ -54,6 +54,8 @@ variables:
     value: snapshot
   - name: sourceStorageResourceGroup
     value: rg-iscala-archive
+  - name: office365ConnectionName
+    value: conn-iscala-archive-o365-dev
 
 - name: sourceStorageResourceGroup
   value: rg-iscala-archive
@@ -97,6 +99,8 @@ variables:
     value: snapshot
   - name: sourceStorageResourceGroup
     value: rg-iscala-archive
+  - name: office365ConnectionName
+    value: conn-iscala-archive-o365-prod
 
 - name: deploymentPrincipalObjectId
   value: 94f97b9f-b688-4f99-a3ff-64e0e8a945d8
@@ -149,6 +153,80 @@ stages:
         inlineScript: |
           set -euo pipefail
           echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
+
+    - task: AzureCLI@2
+      displayName: Office 365 connection check
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          RG="$(resourceGroupName)"
+          CONN_NAME="$(office365ConnectionName)"
+
+          echo "Checking Office 365 connection in resource group: $RG"
+          echo "Expected connection name: $CONN_NAME"
+
+          STATUS="$(az resource show \
+            --resource-group "$RG" \
+            --name "$CONN_NAME" \
+            --resource-type Microsoft.Web/connections \
+            --api-version 2016-06-01 \
+            --query "properties.statuses[0].status" \
+            -o tsv 2>/dev/null || true)"
+
+          if [ -z "$STATUS" ]; then
+            echo "##vso[task.logissue type=warning]Office 365 connection not found: $CONN_NAME"
+          elif [ "$STATUS" != "Connected" ]; then
+            echo "##vso[task.logissue type=warning]Office 365 connection is not Connected (status=$STATUS)"
+          else
+            echo "Office 365 connection is Connected"
+          fi
+
+          - bash: |
+              set -euo pipefail
+
+              FILE="$(connectionsParametersFile)"
+              EXPECTED_RG="$(resourceGroupName)"
+              EXPECTED_NAME="$(office365ConnectionName)"
+
+              python3 - <<'PY'
+          import json, os, sys
+
+          with open(os.environ["FILE"]) as f:
+              data = json.load(f)
+
+          office = data["parameters"]["$connections"]["value"]["office365"]
+          cid = office["connectionId"]
+          cname = office["connectionName"]
+
+          expected_rg = os.environ["EXPECTED_RG"]
+          expected_name = os.environ["EXPECTED_NAME"]
+
+          warn = False
+
+          if f"/resourceGroups/{expected_rg}/" not in cid:
+              print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong resource group: {cid}")
+              warn = True
+
+          if not cid.endswith(f"/connections/{expected_name}"):
+              print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong connection name: {cid}")
+              warn = True
+
+          if cname != expected_name:
+              print(f"##vso[task.logissue type=warning]Office 365 connectionName mismatch: {cname} != {expected_name}")
+              warn = True
+
+          if not warn:
+              print("Office 365 connection parameters look correct")
+          PY
+            displayName: Office 365 connection parameter check
+            env:
+              FILE: $(connectionsParametersFile)
+              EXPECTED_RG: $(resourceGroupName)
+              EXPECTED_NAME: $(office365ConnectionName)
 
     - task: AzureCLI@2
       displayName: HARD GUARDRAILS (dev)
@@ -228,6 +306,7 @@ stages:
         csmFile: infra/connections.json
         csmParametersFile: $(connectionsParametersFile)
         deploymentMode: Incremental
+
 
     - task: AzureResourceManagerTemplateDeployment@3
       displayName: Deploy Logic App (dev)
@@ -584,6 +663,80 @@ stages:
                 echo "##vso[task.setvariable variable=subscriptionId]$(az account show --query id -o tsv)"
 
           - task: AzureCLI@2
+            displayName: Office 365 connection check
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                RG="$(resourceGroupName)"
+                CONN_NAME="$(office365ConnectionName)"
+
+                echo "Checking Office 365 connection in resource group: $RG"
+                echo "Expected connection name: $CONN_NAME"
+
+                STATUS="$(az resource show \
+                  --resource-group "$RG" \
+                  --name "$CONN_NAME" \
+                  --resource-type Microsoft.Web/connections \
+                  --api-version 2016-06-01 \
+                  --query "properties.statuses[0].status" \
+                  -o tsv 2>/dev/null || true)"
+
+                if [ -z "$STATUS" ]; then
+                  echo "##vso[task.logissue type=warning]Office 365 connection not found: $CONN_NAME"
+                elif [ "$STATUS" != "Connected" ]; then
+                  echo "##vso[task.logissue type=warning]Office 365 connection is not Connected (status=$STATUS)"
+                else
+                  echo "Office 365 connection is Connected"
+                fi
+
+                - bash: |
+                    set -euo pipefail
+
+                    FILE="$(connectionsParametersFile)"
+                    EXPECTED_RG="$(resourceGroupName)"
+                    EXPECTED_NAME="$(office365ConnectionName)"
+
+                    python3 - <<'PY'
+                import json, os, sys
+
+                with open(os.environ["FILE"]) as f:
+                    data = json.load(f)
+
+                office = data["parameters"]["$connections"]["value"]["office365"]
+                cid = office["connectionId"]
+                cname = office["connectionName"]
+
+                expected_rg = os.environ["EXPECTED_RG"]
+                expected_name = os.environ["EXPECTED_NAME"]
+
+                warn = False
+
+                if f"/resourceGroups/{expected_rg}/" not in cid:
+                    print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong resource group: {cid}")
+                    warn = True
+
+                if not cid.endswith(f"/connections/{expected_name}"):
+                    print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong connection name: {cid}")
+                    warn = True
+
+                if cname != expected_name:
+                    print(f"##vso[task.logissue type=warning]Office 365 connectionName mismatch: {cname} != {expected_name}")
+                    warn = True
+
+                if not warn:
+                    print("Office 365 connection parameters look correct")
+                PY
+                  displayName: Office 365 connection parameter check
+                  env:
+                    FILE: $(connectionsParametersFile)
+                    EXPECTED_RG: $(resourceGroupName)
+                    EXPECTED_NAME: $(office365ConnectionName)
+
+          - task: AzureCLI@2
             displayName: HARD GUARDRAILS (prod)
             inputs:
               azureSubscription: ${{ parameters.azureServiceConnection }}
@@ -701,25 +854,25 @@ stages:
 
                 echo "Node.js version guardrail passed."
 
-          - bash: |
-              set -euo pipefail
+                - bash: |
+                    set -euo pipefail
 
-              FILE="$(functionAppParametersFile)"
-              TARGET="$(targetNodeVersion)"
-              EXPECTED="~${TARGET}"
+                    FILE="$(functionAppParametersFile)"
+                    TARGET="$(targetNodeVersion)"
+                    EXPECTED="~${TARGET}"
 
-              ACTUAL="$(python3 -c 'import json, os; p=os.environ["FILE"]; print(json.load(open(p))["parameters"]["nodeDefaultVersion"]["value"])')"
+                    ACTUAL="$(python3 -c 'import json, os; p=os.environ["FILE"]; print(json.load(open(p))["parameters"]["nodeDefaultVersion"]["value"])')"
 
-              echo "Parameter file nodeDefaultVersion: $ACTUAL"
-              echo "Expected: $EXPECTED"
+                    echo "Parameter file nodeDefaultVersion: $ACTUAL"
+                    echo "Expected: $EXPECTED"
 
-              if [ "$ACTUAL" != "$EXPECTED" ]; then
-                echo "ERROR: function app parameter file version mismatch."
-                exit 1
-              fi
-            displayName: Guardrail - verify ARM parameter file matches target Node.js
-            env:
-              FILE: $(functionAppParametersFile)
+                    if [ "$ACTUAL" != "$EXPECTED" ]; then
+                      echo "ERROR: function app parameter file version mismatch."
+                      exit 1
+                    fi
+                  displayName: Guardrail - verify ARM parameter file matches target Node.js
+                  env:
+                    FILE: $(functionAppParametersFile)
 
           - task: AzureResourceManagerTemplateDeployment@3
             displayName: Deploy Function infra (prod)
@@ -733,7 +886,7 @@ stages:
               deploymentMode: Incremental
               deploymentOutputs: functionOutputs
 
-          - script: |
+          - bash: |
               echo "##vso[task.setvariable variable=functionWebhookUrl]$(functionOutputs.functionWebhookUrl.value)"
               echo "##vso[task.setvariable variable=appInsightsName]$(functionOutputs.appInsightsName.value)"
             displayName: Set Function outputs variables
