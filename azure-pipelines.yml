@@ -854,25 +854,26 @@ stages:
 
                 echo "Node.js version guardrail passed."
 
-                - bash: |
-                    set -euo pipefail
+          - bash: |
+              set -euo pipefail
 
-                    FILE="$(functionAppParametersFile)"
-                    TARGET="$(targetNodeVersion)"
-                    EXPECTED="~${TARGET}"
+              FILE="$(functionAppParametersFile)"
+              TARGET="$(targetNodeVersion)"
+              EXPECTED="~${TARGET}"
 
-                    ACTUAL="$(python3 -c 'import json, os; p=os.environ["FILE"]; print(json.load(open(p))["parameters"]["nodeDefaultVersion"]["value"])')"
+              ACTUAL="$(python3 -c 'import json, os; p=os.environ["FILE"]; print(json.load(open(p))["parameters"]["nodeDefaultVersion"]["value"])')"
 
-                    echo "Parameter file nodeDefaultVersion: $ACTUAL"
-                    echo "Expected: $EXPECTED"
+              echo "Parameter file nodeDefaultVersion: $ACTUAL"
+              echo "Expected: $EXPECTED"
 
-                    if [ "$ACTUAL" != "$EXPECTED" ]; then
-                      echo "ERROR: function app parameter file version mismatch."
-                      exit 1
-                    fi
-                  displayName: Guardrail - verify ARM parameter file matches target Node.js
-                  env:
-                    FILE: $(functionAppParametersFile)
+              if [ "$ACTUAL" != "$EXPECTED" ]; then
+                echo "ERROR: function app parameter file version mismatch."
+                exit 1
+              fi
+            displayName: Guardrail - verify ARM parameter file matches target Node.js
+            env:
+              FILE: $(functionAppParametersFile)
+
 
           - task: AzureResourceManagerTemplateDeployment@3
             displayName: Deploy Function infra (prod)
