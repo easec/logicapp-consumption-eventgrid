@@ -696,7 +696,7 @@ stages:
           - bash: |
               set -euo pipefail
 
-              FILE="$(connectionsParametersFile)"
+              FILE="$(logicAppParametersFile)"
               EXPECTED_RG="$(resourceGroupName)"
               EXPECTED_NAME="$(office365ConnectionName)"
 
