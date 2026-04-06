@@ -693,48 +693,48 @@ stages:
                   echo "Office 365 connection is Connected"
                 fi
 
-                - bash: |
-                    set -euo pipefail
+          - bash: |
+              set -euo pipefail
 
-                    FILE="$(connectionsParametersFile)"
-                    EXPECTED_RG="$(resourceGroupName)"
-                    EXPECTED_NAME="$(office365ConnectionName)"
+              FILE="$(connectionsParametersFile)"
+              EXPECTED_RG="$(resourceGroupName)"
+              EXPECTED_NAME="$(office365ConnectionName)"
 
-                    python3 - <<'PY'
-                import json, os, sys
+              python3 - <<'PY'
+              import json, os
 
-                with open(os.environ["FILE"]) as f:
-                    data = json.load(f)
+              with open(os.environ["FILE"]) as f:
+                  data = json.load(f)
 
-                office = data["parameters"]["$connections"]["value"]["office365"]
-                cid = office["connectionId"]
-                cname = office["connectionName"]
+              office = data["parameters"]["$connections"]["value"]["office365"]
+              cid = office["connectionId"]
+              cname = office["connectionName"]
 
-                expected_rg = os.environ["EXPECTED_RG"]
-                expected_name = os.environ["EXPECTED_NAME"]
+              expected_rg = os.environ["EXPECTED_RG"]
+              expected_name = os.environ["EXPECTED_NAME"]
 
-                warn = False
+              warn = False
 
-                if f"/resourceGroups/{expected_rg}/" not in cid:
-                    print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong resource group: {cid}")
-                    warn = True
+              if f"/resourceGroups/{expected_rg}/" not in cid:
+                  print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong resource group: {cid}")
+                  warn = True
 
-                if not cid.endswith(f"/connections/{expected_name}"):
-                    print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong connection name: {cid}")
-                    warn = True
+              if not cid.endswith(f"/connections/{expected_name}"):
+                  print(f"##vso[task.logissue type=warning]Office 365 connectionId points to wrong connection name: {cid}")
+                  warn = True
 
-                if cname != expected_name:
-                    print(f"##vso[task.logissue type=warning]Office 365 connectionName mismatch: {cname} != {expected_name}")
-                    warn = True
+              if cname != expected_name:
+                  print(f"##vso[task.logissue type=warning]Office 365 connectionName mismatch: {cname} != {expected_name}")
+                  warn = True
 
-                if not warn:
-                    print("Office 365 connection parameters look correct")
-                PY
-                  displayName: Office 365 connection parameter check
-                  env:
-                    FILE: $(connectionsParametersFile)
-                    EXPECTED_RG: $(resourceGroupName)
-                    EXPECTED_NAME: $(office365ConnectionName)
+              if not warn:
+                  print("Office 365 connection parameters look correct")
+              PY
+            displayName: Office 365 connection parameter check
+            env:
+              FILE: $(logicAppParametersFile)
+              EXPECTED_RG: $(resourceGroupName)
+              EXPECTED_NAME: $(office365ConnectionName)
 
           - task: AzureCLI@2
             displayName: HARD GUARDRAILS (prod)
